@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Bus</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --border: #dfe3e8; --text: #1b1f24; --muted: #667080;
+  --accent: #2f6fde; --add-bg: #e7f6ec; --add: #1a7f37; --del-bg: #fdecec; --del: #c62828;
+  --open: #8a94a6; --proposed: #2f6fde; --countered: #b7791f; --escalated: #c62828; --decided: #1a7f37;
+  --flash: #fff4c2;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216; --panel: #171b21; --border: #2a3039; --text: #e6e9ee; --muted: #8b95a5;
+    --accent: #6ea0ff; --add-bg: #12301d; --add: #56d37c; --del-bg: #3a1618; --del: #ff7b72;
+    --open: #8b95a5; --proposed: #6ea0ff; --countered: #e3a33b; --escalated: #ff7b72; --decided: #56d37c;
+    --flash: #3b3517;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 6px; padding: 4px 10px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+select, textarea, input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+
+.app { display: grid; height: 100vh; grid-template-columns: 260px 1fr; grid-template-rows: 52px 1fr 190px;
+  grid-template-areas: "head head" "side board" "side feed"; }
+.app.detail-open { grid-template-columns: 260px 1fr 460px; grid-template-areas: "head head head" "side board detail" "side feed detail"; }
+header { grid-area: head; display: flex; align-items: center; gap: 16px; padding: 0 18px; background: var(--panel); border-bottom: 1px solid var(--border); }
+header h1 { font-size: 16px; margin: 0; letter-spacing: .2px; }
+header .spacer { flex: 1; }
+.status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--escalated); }
+.status.live .dot { background: var(--decided); }
+
+aside { grid-area: side; overflow: auto; padding: 14px; border-right: 1px solid var(--border); background: var(--panel); }
+aside h2, .detail h2, .feed h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 8px; }
+aside section { margin-bottom: 20px; }
+.agent, .contract { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.agent .id { font-weight: 600; }
+.agent .human { color: var(--muted); font-size: 12px; }
+.agent details { margin-top: 4px; }
+.agent summary { color: var(--accent); font-size: 12px; cursor: pointer; }
+.agent pre { white-space: pre-wrap; margin: 6px 0 0; color: var(--muted); }
+.contract { display: flex; justify-content: space-between; align-items: baseline; cursor: pointer; }
+.contract:hover { border-color: var(--accent); }
+.contract .rev { color: var(--muted); font-size: 12px; }
+
+.board { grid-area: board; overflow: auto; display: grid; grid-template-columns: repeat(5, minmax(128px, 1fr)); gap: 12px; padding: 14px; align-items: start; }
+.column h3 { display: flex; justify-content: space-between; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; margin: 0 0 8px; padding-bottom: 6px; border-bottom: 2px solid var(--c); color: var(--c); }
+.column .count { color: var(--muted); }
+.card { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--c); border-radius: 8px; padding: 10px; margin-bottom: 8px; cursor: pointer; transition: background-color 1.2s ease, box-shadow .15s; }
+.card:hover { box-shadow: 0 1px 6px rgba(0,0,0,.12); }
+.card.selected { outline: 2px solid var(--accent); }
+.card.flash { background: var(--flash); transition: none; }
+.card .title { font-weight: 600; margin-bottom: 4px; }
+.card .meta { color: var(--muted); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); }
+.tag.warn { border-color: var(--countered); color: var(--countered); }
+.tag.alert { border-color: var(--escalated); color: var(--escalated); }
+.empty { color: var(--muted); font-size: 12px; padding: 8px 2px; }
+
+.feed { grid-area: feed; overflow: auto; border-top: 1px solid var(--border); background: var(--panel); padding: 10px 14px; }
+.feed ol { list-style: none; margin: 0; padding: 0; }
+.feed li { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.feed li:hover { color: var(--accent); }
+.feed .when { display: inline-block; min-width: 150px; color: var(--muted); }
+.feed .thread { display: inline-block; min-width: 120px; }
+.needs { font-size: 13px; color: var(--escalated); border: 1px solid var(--escalated); border-radius: 12px; padding: 2px 10px; display: none; cursor: pointer; }
+.needs.on { display: inline-block; }
+.type { display: inline-block; min-width: 132px; font-weight: 600; }
+.t-PROPOSE { color: var(--proposed); } .t-COUNTER { color: var(--countered); } .t-ACCEPT, .t-DECIDED, .t-RESOLVE { color: var(--decided); }
+.t-ESCALATE, .t-ASSUMPTION_BROKEN { color: var(--escalated); } .t-ASK, .t-ANSWER, .t-NOTIFY { color: var(--muted); }
+
+.detail { grid-area: detail; overflow: auto; border-left: 1px solid var(--border); background: var(--panel); padding: 14px 16px; display: none; }
+.app.detail-open .detail { display: block; }
+.detail .top { display: flex; justify-content: space-between; align-items: start; gap: 8px; margin-bottom: 10px; }
+.detail .top h1 { font-size: 16px; margin: 0; }
+.detail .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.event { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.event .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.event .seq { color: var(--muted); font-size: 12px; }
+.event .who { font-size: 12px; color: var(--muted); }
+.event .body { margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+.event.winner { border-color: var(--decided); }
+.diff { margin: 6px 0 0; border: 1px solid var(--border); border-radius: 6px; overflow: auto; padding: 6px 0; }
+.diff div { padding: 0 8px; white-space: pre; }
+.diff .add { background: var(--add-bg); color: var(--add); }
+.diff .del { background: var(--del-bg); color: var(--del); }
+.diff .hunk { color: var(--muted); }
+.action { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); display: flex; gap: 6px; align-items: start; }
+.action textarea { flex: 1; min-height: 54px; resize: vertical; }
+.error { color: var(--del); font-size: 12px; margin-top: 4px; }
+pre.contract-body { white-space: pre; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+
+@media (max-width: 900px) {
+  .app, .app.detail-open { grid-template-columns: 1fr; grid-template-rows: 52px auto auto auto 220px;
+    grid-template-areas: "head" "side" "board" "detail" "feed"; height: auto; }
+  .board { grid-template-columns: 1fr; }
+  .detail { border-left: 0; border-top: 1px solid var(--border); }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header>
+    <h1>Agent Bus</h1>
+    <span class="status" id="status"><span class="dot"></span><span id="status-text">connecting</span></span>
+    <span class="needs" id="needs"></span>
+    <span class="spacer"></span>
+    <label class="status">Acting as
+      <select id="human"></select>
+    </label>
+  </header>
+
+  <aside>
+    <section><h2>Agents</h2><div id="agents"></div></section>
+    <section><h2>Contracts</h2><div id="contracts"></div></section>
+  </aside>
+
+  <main class="board" id="board"></main>
+
+  <section class="detail" id="detail"></section>
+
+  <section class="feed">
+    <h2>Live feed</h2>
+    <ol id="feed"></ol>
+  </section>
+</div>
+
+<script>
+"use strict";
+const STATES = ["OPEN", "PROPOSED", "COUNTERED", "ESCALATED", "DECIDED"];
+const STATE_COLOR = { OPEN: "--open", PROPOSED: "--proposed", COUNTERED: "--countered", ESCALATED: "--escalated", DECIDED: "--decided" };
+const MAX_COUNTERS = 2;
+
+const state = { agents: [], contracts: [], threads: [], selected: null, view: null, lastSeq: 0 };
+const flashing = new Set();
+
+const $ = (id) => document.getElementById(id);
+function el(tag, attrs = {}, ...children) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k === "style") n.setAttribute("style", v);
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) n.setAttribute(k, v);
+  }
+  for (const c of children.flat()) if (c !== null && c !== undefined && c !== false) n.append(c instanceof Node ? c : String(c));
+  return n;
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return body;
+}
+
+function human() { return $("human").value; }
+
+// ---- rendering ----
+
+function renderSidebar() {
+  $("agents").replaceChildren(...state.agents.map((a) =>
+    el("div", { class: "agent" },
+      el("div", { class: "id" }, a.id),
+      el("div", { class: "human" }, "human: " + a.human),
+      a.mandate ? el("details", {}, el("summary", {}, "Mandate"), el("pre", {}, a.mandate)) : null)));
+  $("contracts").replaceChildren(...state.contracts.map((c) =>
+    el("div", { class: "contract", onclick: () => openContract(c.name) },
+      el("span", { class: "mono" }, c.name),
+      el("span", { class: "rev" }, "rev " + c.rev + " · " + c.owner.split("@")[0]))));
+
+  const sel = $("human");
+  const current = sel.value || storedHuman();
+  const humans = [...new Set(state.agents.map((a) => a.human))];
+  sel.replaceChildren(...humans.map((h) => el("option", { value: "human:" + h }, h)));
+  if (humans.includes(current.replace("human:", ""))) sel.value = current;
+}
+
+function renderBoard() {
+  const cols = STATES.map((s) => {
+    const items = state.threads.filter((t) => t.state === s);
+    return el("div", { class: "column", style: `--c: var(${STATE_COLOR[s]})` },
+      el("h3", {}, s, el("span", { class: "count" }, items.length)),
+      items.length ? items.map(card) : el("div", { class: "empty" }, "None"));
+  });
+  $("board").replaceChildren(...cols);
+
+  // Threads that need a human: an open question to one, or an escalation.
+  const waiting = state.threads.filter((t) => t.awaiting_human || t.state === "ESCALATED");
+  const needs = $("needs");
+  needs.classList.toggle("on", waiting.length > 0);
+  needs.textContent = waiting.length === 1 ? "1 thread needs a human" : `${waiting.length} threads need a human`;
+  needs.onclick = () => waiting.length && openThread(waiting[0].id);
+}
+
+function card(t) {
+  const tags = [];
+  if (t.contract) tags.push(el("span", { class: "mono" }, t.contract));
+  if (t.counter_count) tags.push(el("span", { class: "tag" + (t.counter_count >= MAX_COUNTERS ? " warn" : "") }, `counters ${t.counter_count}/${MAX_COUNTERS}`));
+  if (t.blocking && t.state !== "DECIDED") tags.push(el("span", { class: "tag" }, "blocking"));
+  if (t.awaiting_human) tags.push(el("span", { class: "tag alert" }, "waiting on human"));
+  if (t.resolved_by && t.resolved_by !== "accept") tags.push(el("span", { class: "tag" }, "by " + t.resolved_by));
+  const c = el("div", {
+    class: "card" + (state.selected === t.id ? " selected" : "") + (flashing.has(t.id) ? " flash" : ""),
+    style: `--c: var(${STATE_COLOR[t.state]})`,
+    onclick: () => openThread(t.id),
+  },
+    el("div", { class: "title" }, t.title),
+    el("div", { class: "meta" }, el("span", { class: "mono" }, t.id), ...tags));
+  return c;
+}
+
+function diffView(diff) {
+  return el("div", { class: "diff mono" }, diff.replace(/\n$/, "").split("\n")
+    .filter((l) => !l.startsWith("--- ") && !l.startsWith("+++ "))
+    .map((l) => el("div", { class: l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : l.startsWith("@@") ? "hunk" : "" }, l || " ")));
+}
+
+function renderThread(thread, events) {
+  const answered = new Set(events.filter((e) => e.type === "ANSWER").map((e) => e.reply_to));
+  const items = events.map((e) => {
+    const isProposal = e.type === "PROPOSE" || e.type === "COUNTER";
+    const node = el("div", { class: "event" + (e.seq === thread.decided_seq ? " winner" : "") },
+      el("div", { class: "head" },
+        el("span", { class: "seq" }, "#" + e.seq),
+        el("span", { class: "type t-" + e.type }, e.type),
+        el("span", { class: "who" }, e.from + (e.to ? " to " + e.to : "") + (e.blocking ? " · blocking" : "")),
+        e.seq === thread.decided_seq ? el("span", { class: "tag" }, "winning proposal") : null),
+      e.body ? el("div", { class: "body" }, e.body) : null,
+      e.mandate_ref ? el("div", { class: "who" }, "Mandate: " + e.mandate_ref) : null,
+      e.diff ? diffView(e.diff) : null);
+
+    // Human actions: answer a question addressed to a human, or pick a proposal on an escalated thread.
+    if (e.type === "ASK" && e.to && e.to.startsWith("human:") && !answered.has(e.seq)) {
+      node.append(answerForm(thread.id, e));
+    }
+    if (isProposal && thread.state === "ESCALATED") {
+      node.append(pickForm(thread.id, e));
+    }
+    return node;
+  });
+  const counters = thread.counter_count ? ` · counters ${thread.counter_count}/${MAX_COUNTERS}` : "";
+  $("detail").replaceChildren(
+    el("div", { class: "top" },
+      el("div", {},
+        el("h1", {}, thread.title),
+        el("div", { class: "sub mono" }, `${thread.id} · ${thread.state}${thread.contract ? " · " + thread.contract : ""}${counters}`)),
+      el("button", { onclick: closeDetail }, "Close")),
+    el("h2", {}, "Timeline"),
+    ...items);
+}
+
+function answerForm(threadId, ask) {
+  const box = el("textarea", { placeholder: `Answer as ${ask.to}` });
+  const err = el("div", { class: "error" });
+  const btn = el("button", { class: "primary", onclick: async () => {
+    if (human() !== ask.to) { err.textContent = `This question is for ${ask.to}. Switch "Acting as" first.`; return; }
+    btn.disabled = true;
+    try {
+      await api(`/api/threads/${encodeURIComponent(threadId)}/answer`, {
+        method: "POST", headers: { "X-Bus-From": human(), "Content-Type": "application/json" },
+        body: JSON.stringify({ reply_to: ask.seq, answer: box.value }),
+      });
+    } catch (e) { err.textContent = e.message; btn.disabled = false; }
+  } }, "Answer");
+  return el("div", {}, el("div", { class: "action" }, box, btn), err);
+}
+
+function pickForm(threadId, proposal) {
+  const err = el("div", { class: "error" });
+  const btn = el("button", { class: "primary", onclick: async () => {
+    btn.disabled = true;
+    try {
+      await api(`/api/threads/${encodeURIComponent(threadId)}/resolve`, {
+        method: "POST", headers: { "X-Bus-From": human(), "Content-Type": "application/json" },
+        body: JSON.stringify({ pick: proposal.seq, note: "picked on the dashboard" }),
+      });
+    } catch (e) { err.textContent = e.message; btn.disabled = false; }
+  } }, `Pick #${proposal.seq}`);
+  return el("div", {}, el("div", { class: "action" }, btn, el("span", { class: "who" }, "Decide the thread with this proposal")), err);
+}
+
+function feedLine(e) {
+  const text = (e.body || "").replace(/\s+/g, " ");
+  return el("li", { onclick: () => e.thread && openThread(e.thread) },
+    el("span", { class: "when mono" }, new Date(e.ts).toLocaleTimeString() + "  #" + e.seq),
+    el("span", { class: "type t-" + e.type }, e.type),
+    el("span", { class: "thread mono" }, e.thread || "-"),
+    el("span", { class: "who" }, e.from + (e.to ? " to " + e.to : "") + "  "),
+    text);
+}
+
+// ---- data ----
+
+async function loadState() {
+  const s = await api("/api/state");
+  state.agents = s.agents; state.contracts = s.contracts; state.threads = s.threads;
+  renderSidebar();
+  renderBoard();
+}
+
+async function openThread(id) {
+  state.selected = id; state.view = "thread";
+  history.replaceState(null, "", "#thread=" + encodeURIComponent(id));
+  $("app").classList.add("detail-open");
+  renderBoard();
+  const { thread, events } = await api(`/api/threads/${encodeURIComponent(id)}`);
+  if (state.selected === id) renderThread(thread, events);
+}
+
+async function openContract(name) {
+  state.selected = null; state.view = "contract:" + name;
+  $("app").classList.add("detail-open");
+  renderBoard();
+  const c = await api(`/api/contracts/${encodeURIComponent(name)}`);
+  $("detail").replaceChildren(
+    el("div", { class: "top" },
+      el("div", {}, el("h1", { class: "mono" }, c.name), el("div", { class: "sub" }, `rev ${c.rev} · owner ${c.owner}`)),
+      el("button", { onclick: closeDetail }, "Close")),
+    el("pre", { class: "contract-body mono" }, c.content));
+}
+
+function closeDetail() {
+  state.selected = null; state.view = null;
+  history.replaceState(null, "", location.pathname);
+  $("app").classList.remove("detail-open");
+  renderBoard();
+}
+
+let refreshTimer = null;
+function scheduleRefresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(async () => {
+    await loadState();
+    if (state.view === "thread" && state.selected) openThread(state.selected);
+    else if (state.view && state.view.startsWith("contract:")) openContract(state.view.slice(9));
+  }, 120);
+}
+
+function onEvent(e) {
+  state.lastSeq = Math.max(state.lastSeq, e.seq);
+  const feed = $("feed");
+  feed.prepend(feedLine(e));
+  while (feed.children.length > 300) feed.lastChild.remove();
+  if (e.thread) {
+    flashing.add(e.thread);
+    setTimeout(() => { flashing.delete(e.thread); renderBoard(); }, 900);
+  }
+  scheduleRefresh();
+}
+
+function connect() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/ws?since=${state.lastSeq}`);
+  ws.onopen = () => { $("status").classList.add("live"); $("status-text").textContent = "live"; };
+  ws.onmessage = (m) => onEvent(JSON.parse(m.data));
+  ws.onclose = () => {
+    $("status").classList.remove("live");
+    $("status-text").textContent = "reconnecting";
+    setTimeout(connect, 1500);
+  };
+}
+
+// Remembering the chosen human is a convenience; storage may be unavailable.
+function storedHuman() { try { return localStorage.getItem("agentbus.human") || ""; } catch { return ""; } }
+$("human").addEventListener("change", () => { try { localStorage.setItem("agentbus.human", human()); } catch {} });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDetail(); });
+
+function openFromHash() {
+  const m = location.hash.match(/^#thread=(.+)$/);
+  if (m) openThread(decodeURIComponent(m[1]));
+}
+
+loadState().then(() => { openFromHash(); connect(); }).catch((e) => { $("status-text").textContent = "error: " + e.message; });
+</script>
+</body>
+</html>

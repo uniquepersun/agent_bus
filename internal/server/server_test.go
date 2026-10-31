@@ -142,3 +142,17 @@ func TestNegotiationOverHTTP(t *testing.T) {
 		t.Fatalf("feed: %v", got)
 	}
 }
+
+func TestDashboardIsServed(t *testing.T) {
+	ts := newServer(t)
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var buf bytes.Buffer
+	buf.ReadFrom(resp.Body)
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") || !strings.Contains(buf.String(), "<title>Agent Bus</title>") {
+		t.Fatalf("GET /: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+}

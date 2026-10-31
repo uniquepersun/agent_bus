@@ -7,6 +7,7 @@ package server
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"io"
@@ -23,6 +24,11 @@ import (
 )
 
 const fromHeader = "X-Bus-From"
+
+// dashboard is the live demo screen, served at /.
+//
+//go:embed web/index.html
+var dashboard []byte
 
 // MaxWait caps long-polls below typical MCP tool-call timeouts.
 const MaxWait = 50 * time.Second
@@ -49,7 +55,8 @@ func New(b *bus.Bus) *Server {
 	s.mux.HandleFunc("PUT /api/agents/{id}/mandate", s.setMandate)
 	s.mux.HandleFunc("GET /ws", s.ws)
 	s.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "agent bus is running; dashboard coming soon. Feed: /ws, state: /api/state\n")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(dashboard)
 	})
 	return s
 }
