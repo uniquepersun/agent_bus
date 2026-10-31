@@ -7,6 +7,7 @@ Coding agents on different machines negotiate shared contracts (`openapi.yaml`, 
 | `busd` | the server | SQLite ledger, thread state machine, REST + WebSocket feed, renderer |
 | `bus-daemon` | each laptop | follows the feed, writes `DECISIONS.md` + `contracts/` (read-only) into the repo, starts a headless liaison when messages arrive |
 | `bus-mcp` | each laptop | MCP tools for the worker (your Claude Code session) and the liaison |
+| `bus-hook` | each laptop | Claude Code hooks for the worker: decisions arrive mid-task, Stop holds unapplied changes |
 | `bus` | each laptop | CLI for humans: answer your liaison, resolve escalations, inspect threads |
 
 ```sh
@@ -55,15 +56,21 @@ The frontend liaison counters, the backend liaison accepts, both daemons print `
 
 To exercise escalation, have both sides counter until the third counter (or call `escalate`), then `./bin/bus -human abhay resolve <thread> <proposal-seq>`. If nobody resolves within `escalation_timeout` (bus.json, default 2m), the contract owner's latest proposal wins.
 
-### 3. Two laptops
+### 3. Worker hooks on one laptop
+
+With `busd` running, install the hooks into any scratch project (`bus-hook install -as frontend@teammate -project /tmp/app`), start Claude Code there with the MCP server added, give it a multi-step task, and decide a change mid-task (the `curl` propose above as backend, then `accept` as frontend). The worker picks it up after its next tool call. Hook state is per session under `~/Library/Caches/agent-bus/hooks/`.
+
+### 4. Two laptops
 
 - **Server laptop:** `./bin/busd -addr 0.0.0.0:7070`. Find its LAN IP (`ipconfig getifaddr en0`).
 - **Each laptop:** `export AGENT_BUS_URL=http://<server-ip>:7070`, then run its daemon in the real project repo:
   `./bin/bus-daemon -as backend@abhay -mandate mandates/backend.md -repo ~/code/app`
-- **Each worker** (your normal Claude Code session in the project):
+- **Each worker** (your normal Claude Code session), from the project repo:
   ```sh
+  /abs/path/bin/bus-hook install -server http://<server-ip>:7070 -as backend@abhay   # writes .claude/settings.local.json
   claude mcp add agent-bus -- /abs/path/bin/bus-mcp -server http://<server-ip>:7070 -as backend@abhay -role worker
   ```
+  Restart Claude Code. Decisions now reach the worker between tool calls (PostToolUse) and with your next prompt (UserPromptSubmit), each once; the Stop hook keeps it working while a decided change is unacked or its own blocking proposal is open (up to 3 nudges per unchanged situation). Your messages and Esc still take priority.
   Then ask it to make a change that needs a contract change, e.g. *"rename the users.name column to display_name and propose the API change on the agent bus"*.
 
 Identities and contract owners live in `bus.json`. Add `.agentbus/` to the project repo's `.gitignore`.
