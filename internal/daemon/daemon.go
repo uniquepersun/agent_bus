@@ -102,13 +102,13 @@ func (d *Daemon) handle(ctx context.Context, e bus.Event) {
 	case e.Type == bus.Decided:
 		d.sync(ctx)
 	case e.Type == bus.Ask && e.To == d.human:
-		d.Log.Printf("❓ %s asks you (thread %s): %s\n    answer with: bus answer %s %d \"...\"",
+		d.Log.Printf("QUESTION FOR YOU: %s asks (thread %s): %s\n    answer with: bus answer %s %d \"...\"",
 			e.From, e.Thread, e.Body, e.Thread, e.Seq)
 	case e.Type == bus.Escalate:
-		d.Log.Printf("🚨 %s escalated to the humans. Review: bus show %s · decide: bus resolve %s <proposal-seq>",
+		d.Log.Printf("ESCALATED: %s needs the humans. Review: bus show %s; decide: bus resolve %s <proposal-seq>",
 			e.Thread, e.Thread, e.Thread)
 	case e.Type == bus.AssumptionBroken && e.To == me:
-		d.Log.Printf("⚠️  assumption broken on %s; your worker will be told to fix its code", e.Thread)
+		d.Log.Printf("ASSUMPTION BROKEN on %s; your worker will be told to fix its code", e.Thread)
 	}
 	if bus.RoleLiaison.Sees(me, e) {
 		d.kick()
@@ -148,7 +148,7 @@ func (d *Daemon) liaisonLoop(ctx context.Context) {
 		}
 		lastHandled = last
 
-		d.Log.Printf("📨 %d message(s) → starting liaison", len(inbox))
+		d.Log.Printf("%d message(s) for the liaison; starting it", len(inbox))
 		start := time.Now()
 		runCtx, cancel := context.WithTimeout(ctx, d.LiaisonTimeout)
 		err = d.Liaison.Run(runCtx, d.prompt(inbox))
@@ -197,7 +197,7 @@ func (d *Daemon) sync(ctx context.Context) {
 		if err != nil {
 			d.Log.Printf("render %s: %v", path, err)
 		} else if changed {
-			d.Log.Printf("📄 updated %s", path)
+			d.Log.Printf("updated %s", path)
 		}
 	}
 }

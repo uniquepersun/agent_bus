@@ -1,44 +1,92 @@
-# Agent Bus
+# Instructions
 
-Coding agents on different machines negotiate shared contracts (`openapi.yaml`, `schema.sql`, `env.md`) under their humans' mandates. See [SPEC.md](SPEC.md) for the design.
+How to build, run, and test Agent Bus. For what the project is and how it works, see [README.md](README.md).
 
-| Binary | Runs on | Does |
-|---|---|---|
-| `busd` | the server | SQLite ledger, thread state machine, REST + WebSocket feed, renderer |
-| `bus-daemon` | each laptop | follows the feed, writes `DECISIONS.md` + `contracts/` (read-only) into the repo, starts a headless liaison when messages arrive |
-| `bus-mcp` | each laptop | MCP tools for the worker (your Claude Code session) and the liaison |
-| `bus-hook` | each laptop | Claude Code hooks for the worker: decisions arrive mid-task, Stop holds unapplied changes |
-| `bus` | each laptop | CLI for humans: answer your liaison, resolve escalations, inspect threads |
+## Requirements
+
+- Go 1.27 or newer, as declared in `go.mod` (Go 1.21+ downloads the right toolchain automatically)
+- Claude Code (`claude` on the PATH) for real liaisons and workers
+- Optional: Codex CLI, used as a liaison via `-liaison "codex exec"`
+
+## Build
 
 ```sh
 go build -o bin/ ./cmd/...
 ```
 
+This produces five binaries in `bin/`:
+
+| Binary | Runs on | Purpose |
+|---|---|---|
+| `busd` | the server | Ledger, state machine, REST API, WebSocket feed, renderer, dashboard |
+| `bus-daemon` | each laptop | Follows the feed, writes rendered files into the repo, starts liaisons |
+| `bus-mcp` | each laptop | MCP server for the worker and the liaison |
+| `bus-hook` | each laptop | Claude Code hooks for the worker |
+| `bus` | each laptop | Command-line interface for humans |
+
+## Configuration
+
+`bus.json` (read by `busd`) defines the agents, their humans, the contracts and their owners, and the escalation timeout:
+
+```json
+{
+  "escalation_timeout": "2m",
+  "agents": [
+    {"id": "backend@abhay", "human": "abhay", "mandate_file": "mandates/backend.md"},
+    {"id": "frontend@teammate", "human": "teammate", "mandate_file": "mandates/frontend.md"}
+  ],
+  "contracts": [
+    {"name": "openapi.yaml", "owner": "backend@abhay", "seed_file": "seed/openapi.yaml"}
+  ]
+}
+```
+
+Contracts are seeded at revision 0 from `seed_file` on first start; later starts keep the ledger's history. Delete `bus.db` for a fresh ledger.
+
+The other binaries take `-server` and `-as`, or the environment variables `AGENT_BUS_URL` and `AGENT_BUS_ID`. The `bus` CLI takes `-human` or `AGENT_BUS_HUMAN`.
+
 ## Test
 
-### 1. Automated tests (no LLM, no tokens)
+### 1. Automated tests
+
+No LLM calls and no tokens:
 
 ```sh
 go test -race ./...
 ```
 
-`TestDaemonsRunDemoTrace` runs the SPEC demo trace with two daemons and scripted liaisons; `TestDemoTraceOverMCP` runs it through the MCP tools.
+Notable tests:
 
-### 2. One laptop, real liaisons
+- `TestDemoTrace` (bus): the full negotiation from SPEC.md against the state machine.
+- `TestDemoTraceOverMCP` (mcptools): the same trace through real MCP sessions.
+- `TestDaemonsRunDemoTrace` (daemon): two daemons with scripted liaisons, including rendered files.
+- `TestWorkerHooks` (hook): mid-task injection, once-only delivery, and the Stop hook's limits.
 
-Four terminals in this repo. Each daemon gets its own scratch repo directory.
+### 2. Dashboard
+
+Start the server and open http://localhost:7070:
 
 ```sh
-# 1: server (rm bus.db for a fresh ledger)
+./bin/busd
+```
+
+The dashboard shows threads in columns by state, a live event feed, agents with their mandates, and contracts with their current revision. Select a thread to see its timeline and diffs. Choose your identity under "Acting as" to answer a question addressed to you or to pick a proposal on an escalated thread. A thread can be linked directly with `http://localhost:7070/#thread=<thread-id>`.
+
+### 3. Full negotiation on one laptop
+
+Use four terminals in this repository. Each daemon gets its own scratch directory standing in for a project repo.
+
+```sh
+# Terminal 1: server, then open http://localhost:7070
 ./bin/busd
 
-# 2: frontend daemon
+# Terminal 2: frontend daemon
 mkdir -p /tmp/fe && ./bin/bus-daemon -as frontend@teammate -mandate mandates/frontend.md -repo /tmp/fe
 
-# 3: backend daemon
+# Terminal 3: backend daemon
 mkdir -p /tmp/be && ./bin/bus-daemon -as backend@abhay -mandate mandates/backend.md -repo /tmp/be
 
-# 4: play the backend worker: propose the rename
+# Terminal 4: act as the backend worker and propose a rename
 curl -X POST localhost:7070/api/threads/users-shape/propose -H 'X-Bus-From: backend@abhay' -d '{
   "title": "Shape of /users response", "contract": "openapi.yaml", "base_rev": 0, "blocking": true,
   "reason": "DB column renamed for i18n",
@@ -46,31 +94,52 @@ curl -X POST localhost:7070/api/threads/users-shape/propose -H 'X-Bus-From: back
             {"old": "required: [id, name, email]", "new": "required: [id, display_name, email]"}]}'
 ```
 
-Expected: within ~30s terminal 2 prints `❓ frontend@teammate asks you ... answer with: bus answer users-shape 2 "..."`. Answer as the frontend human:
+Expected sequence:
+
+1. Within about 30 seconds the frontend liaison decides that a rename needs its human's approval. Terminal 2 prints `QUESTION FOR YOU: frontend@teammate asks ...` with the answer command, and the dashboard shows "1 thread needs a human".
+2. Answer from the dashboard (acting as `teammate`) or the CLI:
+   ```sh
+   ./bin/bus -human teammate answer users-shape 2 "fine, but keep name for one release"
+   ```
+3. The frontend liaison counters with an additive change, and the backend liaison accepts it under its mandate.
+4. Both daemons print `updated contracts/openapi.yaml`, and `/tmp/fe/DECISIONS.md` records the decision.
+
+Useful commands: `./bin/bus threads`, `./bin/bus show users-shape`, `./bin/bus tail`. Full liaison transcripts are written to `<repo>/.agentbus/logs/`.
+
+To test escalation, counter back and forth until a third counter (or call `escalate`), then pick a proposal on the dashboard or run `./bin/bus -human abhay resolve <thread> <proposal-seq>`. If no human resolves it within `escalation_timeout`, the contract owner's latest proposal wins.
+
+### 4. Worker hooks on one laptop
+
+With `busd` running, set up a scratch project as the frontend worker:
 
 ```sh
-./bin/bus -human teammate answer users-shape 2 "fine, but keep name for one release"
+mkdir -p /tmp/app && cd /tmp/app
+/abs/path/bin/bus-hook install -as frontend@teammate -project .
+claude mcp add agent-bus -- /abs/path/bin/bus-mcp -as frontend@teammate -role worker
+claude
 ```
 
-The frontend liaison counters, the backend liaison accepts, both daemons print `📄 updated contracts/openapi.yaml`, and `/tmp/fe/DECISIONS.md` shows the decision. Inspect with `./bin/bus threads`, `./bin/bus show users-shape`, `./bin/bus tail`. Full liaison transcripts: `<repo>/.agentbus/logs/`.
+Give Claude Code a multi-step task. While it works, propose and accept a contract change (the `curl` above as backend, then `accept` as frontend). After its next tool call the worker receives the change, finishes its current step, updates its code, and acknowledges the change. Hook state is kept per session under `~/Library/Caches/agent-bus/hooks/`.
 
-To exercise escalation, have both sides counter until the third counter (or call `escalate`), then `./bin/bus -human abhay resolve <thread> <proposal-seq>`. If nobody resolves within `escalation_timeout` (bus.json, default 2m), the contract owner's latest proposal wins.
+### 5. Two laptops
 
-### 3. Worker hooks on one laptop
+1. **Server laptop:** run `./bin/busd -addr 0.0.0.0:7070` and find its LAN address with `ipconfig getifaddr en0`. Open the dashboard on this machine for the demo screen.
+2. **Each laptop:** set `export AGENT_BUS_URL=http://<server-ip>:7070`, then run the daemon in the real project repository:
+   ```sh
+   ./bin/bus-daemon -as backend@abhay -mandate mandates/backend.md -repo ~/code/app
+   ```
+3. **Each worker** (the person's normal Claude Code session), from the project repository:
+   ```sh
+   /abs/path/bin/bus-hook install -server http://<server-ip>:7070 -as backend@abhay
+   claude mcp add agent-bus -- /abs/path/bin/bus-mcp -server http://<server-ip>:7070 -as backend@abhay -role worker
+   ```
+   Restart Claude Code, then ask for a change that needs a contract change, for example: "Rename the users.name column to display_name and propose the API change on the agent bus."
 
-With `busd` running, install the hooks into any scratch project (`bus-hook install -as frontend@teammate -project /tmp/app`), start Claude Code there with the MCP server added, give it a multi-step task, and decide a change mid-task (the `curl` propose above as backend, then `accept` as frontend). The worker picks it up after its next tool call. Hook state is per session under `~/Library/Caches/agent-bus/hooks/`.
+Add `.agentbus/` to the project repository's `.gitignore`. The hooks are written to `.claude/settings.local.json`, which is personal and not committed.
 
-### 4. Two laptops
+## Troubleshooting
 
-- **Server laptop:** `./bin/busd -addr 0.0.0.0:7070`. Find its LAN IP (`ipconfig getifaddr en0`).
-- **Each laptop:** `export AGENT_BUS_URL=http://<server-ip>:7070`, then run its daemon in the real project repo:
-  `./bin/bus-daemon -as backend@abhay -mandate mandates/backend.md -repo ~/code/app`
-- **Each worker** (your normal Claude Code session), from the project repo:
-  ```sh
-  /abs/path/bin/bus-hook install -server http://<server-ip>:7070 -as backend@abhay   # writes .claude/settings.local.json
-  claude mcp add agent-bus -- /abs/path/bin/bus-mcp -server http://<server-ip>:7070 -as backend@abhay -role worker
-  ```
-  Restart Claude Code. Decisions now reach the worker between tool calls (PostToolUse) and with your next prompt (UserPromptSubmit), each once; the Stop hook keeps it working while a decided change is unacked or its own blocking proposal is open (up to 3 nudges per unchanged situation). Your messages and Esc still take priority.
-  Then ask it to make a change that needs a contract change, e.g. *"rename the users.name column to display_name and propose the API change on the agent bus"*.
-
-Identities and contract owners live in `bus.json`. Add `.agentbus/` to the project repo's `.gitignore`.
+- **A liaison never starts:** check that the daemon's `-as` identity is listed in `bus.json` and that the daemon prints `following <url>`.
+- **A liaison leaves messages unhandled:** the daemon does not restart it for the same messages; it waits for new activity. Read the transcript in `.agentbus/logs/`.
+- **The worker does not see updates:** run `/hooks` in Claude Code to confirm the three hooks are loaded, and check that `bus-mcp` is listed under `/mcp`.
+- **Proposal rejected as stale:** the contract moved on. Read it again with `get_contract` and propose against the new revision.

@@ -54,7 +54,7 @@ func main() {
 		for _, th := range ths {
 			extra := ""
 			if th.AwaitingHuman != "" {
-				extra = "  ❓ waiting on " + th.AwaitingHuman + "'s human"
+				extra = "  (waiting on " + th.AwaitingHuman + "'s human)"
 			}
 			fmt.Printf("%-10s %-24s %-14s %s%s\n", th.State, th.ID, th.Contract, th.Title, extra)
 		}

@@ -91,7 +91,7 @@ func (h *Hook) inject(ctx context.Context, st *state) (string, error) {
 // Describe tells the worker what changed and what to do about it.
 func Describe(evs []bus.Event) string {
 	var sb strings.Builder
-	sb.WriteString("📬 agent-bus update. This is lower priority than your user: finish your current step, then handle it.\n")
+	sb.WriteString("[agent-bus] Contract update. This is lower priority than your user: finish your current step, then handle it.\n")
 	needsAck := false
 	for _, e := range evs {
 		sb.WriteString("\n" + client.FormatEvent(e) + "\n")
