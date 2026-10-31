@@ -173,6 +173,16 @@ Each laptop can use `agy` instead of Claude Code for both the worker and the lia
 
 A demonstration with two laptops: the backend person asks their agent in `bus chat` to rename `users.name` to `display_name` and propose the API change. The frontend person's chat shows the proposal, then `QUESTION FOR YOU` from their liaison; they reply with `/answer`. The liaisons settle the counter-proposal, both chats show `DECIDED`, and the frontend agent updates its code to match. Keep the dashboard on the projector throughout.
 
+### 7. Playing blob while the agents work
+
+Install [blob](https://github.com/uniquepersun/blob) (`brew tap uniquepersun/blob https://github.com/uniquepersun/blob && brew install uniquepersun/blob/blob`) and start the game in its own terminal tab with `blob`. Run the daemon with `-blob` (`demo.sh laptop` adds it when `blob` is on the PATH):
+
+```sh
+./bin/bus-daemon -blob -liaison agy -as frontend@teammate -mandate mandates/frontend.md -repo ~/code/app
+```
+
+The daemon sends the game `working` while your liaison negotiates, `attention` when your liaison has a question for you or a thread escalates (the game pauses with a card naming the thread), and `done` when a decision lands. Answer in `bus chat` with `/answer`, then go back to the game. With no game running, the notifications are skipped. For pauses when your own worker agent needs permission, use blob's own wrapper or hooks (`blob agy`, `blob install claude`).
+
 ## Troubleshooting
 
 - **A liaison never starts:** check that the daemon's `-as` identity is listed in `bus.json` and that the daemon prints `following <url>`.

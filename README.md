@@ -112,6 +112,21 @@ For the Antigravity CLI, `bus-hook install -agent agy` installs a workspace plug
 
 `bus chat` is a single terminal per developer for live demonstrations. The developer chats with their `agy` worker as a persistent session, and Agent Bus activity appears inline in the same conversation: proposals, counters, and decisions as they happen, the moment an update is delivered to the agent, and questions from the developer's own liaison. The developer answers those questions with `/answer` and resolves escalations with `/pick` without leaving the chat.
 
+## Play while the agents work: blob
+
+[blob](https://github.com/uniquepersun/blob) is the companion game for Agent Bus: a cozy terminal blob shooter that lives next to your coding agent. Play while Claude Code, Codex, Gemini CLI, or agy works; the moment the agent needs you, the game freezes, focus jumps to the agent's prompt, and when you answer you are dropped back into the match.
+
+It works with Agent Bus in two ways:
+
+- **Your worker agent.** Wrap it with blob (`blob claude`, `blob agy`) or install blob's hooks (`blob install claude`), as described in the blob README. The game pauses whenever your own agent asks for permission.
+- **Your liaison.** Negotiation happens in the background, so `bus-daemon -blob` tells a running blob game about it: the game shows that your liaison is negotiating, pauses with a card when your liaison has a question for you or a thread escalates to the humans, and celebrates when a decision lands. `demo.sh laptop` turns this on automatically when `blob` is installed.
+
+```sh
+brew tap uniquepersun/blob https://github.com/uniquepersun/blob
+brew install uniquepersun/blob/blob
+blob                      # in its own terminal tab, next to bus chat or your agent
+```
+
 ## Components
 
 | Path | Description |

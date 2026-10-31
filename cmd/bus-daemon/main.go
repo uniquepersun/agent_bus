@@ -10,6 +10,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -28,6 +29,7 @@ func main() {
 	liaisonCmd := flag.String("liaison", "claude", `"claude", "agy", or a command that takes the prompt as its last argument (e.g. "codex exec")`)
 	mcpBin := flag.String("mcp-bin", "", "bus-mcp executable for claude and agy liaisons (default: next to this binary)")
 	timeout := flag.Duration("liaison-timeout", 5*time.Minute, "max duration of one liaison session")
+	blob := flag.Bool("blob", false, "tell a running blob game (github.com/uniquepersun/blob) when your liaison is negotiating, needs you, or a decision lands")
 	flag.Parse()
 
 	if *as == "" {
@@ -88,6 +90,11 @@ func main() {
 		runner = daemon.CommandRunner{Argv: strings.Fields(*liaisonCmd), Dir: dir, LogDir: logDir, Out: os.Stderr}
 	}
 
+	var notify func(kind, message string)
+	if *blob {
+		notify = blobNotifier()
+	}
+
 	d := &daemon.Daemon{
 		Client:         c,
 		Repo:           dir,
@@ -95,9 +102,26 @@ func main() {
 		Liaison:        runner,
 		Log:            log.New(os.Stderr, "", log.Ltime),
 		LiaisonTimeout: *timeout,
+		Notify:         notify,
 	}
 	if err := d.Run(ctx); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// blobNotifier forwards activity to the blob game with `blob send`. With no
+// game running, blob exits with an error, which is ignored.
+func blobNotifier() func(kind, message string) {
+	bin, err := exec.LookPath("blob")
+	if err != nil {
+		log.Fatal("-blob: blob is not on PATH; install it from https://github.com/uniquepersun/blob")
+	}
+	return func(kind, message string) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			exec.CommandContext(ctx, bin, "send", kind, message).Run()
+		}()
 	}
 }
 

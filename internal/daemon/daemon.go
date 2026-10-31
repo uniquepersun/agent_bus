@@ -35,6 +35,10 @@ type Daemon struct {
 	// LiaisonTimeout bounds one liaison session.
 	LiaisonTimeout time.Duration
 
+	// Notify, when set, reports activity to the human outside the terminal
+	// (for example the blob game): kind is "working", "attention" or "done".
+	Notify func(kind, message string)
+
 	human string
 	kicks chan struct{}
 }
@@ -101,17 +105,26 @@ func (d *Daemon) handle(ctx context.Context, e bus.Event) {
 	switch {
 	case e.Type == bus.Decided:
 		d.sync(ctx)
+		d.notify("done", "agent-bus: "+e.Thread+" decided")
 	case e.Type == bus.Ask && e.To == d.human:
 		d.Log.Printf("QUESTION FOR YOU: %s asks (thread %s): %s\n    answer with: bus answer %s %d \"...\"",
 			e.From, e.Thread, e.Body, e.Thread, e.Seq)
+		d.notify("attention", "agent-bus: your liaison has a question on "+e.Thread)
 	case e.Type == bus.Escalate:
 		d.Log.Printf("ESCALATED: %s needs the humans. Review: bus show %s; decide: bus resolve %s <proposal-seq>",
 			e.Thread, e.Thread, e.Thread)
+		d.notify("attention", "agent-bus: "+e.Thread+" needs the humans")
 	case e.Type == bus.AssumptionBroken && e.To == me:
 		d.Log.Printf("ASSUMPTION BROKEN on %s; your worker will be told to fix its code", e.Thread)
 	}
 	if bus.RoleLiaison.Sees(me, e) {
 		d.kick()
+	}
+}
+
+func (d *Daemon) notify(kind, message string) {
+	if d.Notify != nil {
+		d.Notify(kind, message)
 	}
 }
 
@@ -160,6 +173,7 @@ func (d *Daemon) liaisonLoop(ctx context.Context) {
 		} else {
 			d.Log.Printf("%d message(s) for the liaison; starting it", len(inbox))
 		}
+		d.notify("working", "agent-bus: liaison negotiating")
 		start := time.Now()
 		runCtx, cancel := context.WithTimeout(ctx, d.LiaisonTimeout)
 		err = d.Liaison.Run(runCtx, d.prompt(inbox))

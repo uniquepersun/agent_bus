@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -97,10 +98,15 @@ func TestDaemonsRunDemoTrace(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	var notesMu sync.Mutex
+	var notes []string // what the frontend human's game was told
 	repos := map[string]string{}
 	for id, r := range map[string]Runner{backend: backendLiaison, frontend: frontendLiaison} {
 		repos[id] = t.TempDir()
 		d := &Daemon{Client: client.New(ts.URL, id), Repo: repos[id], Liaison: r, Log: log.New(io.Discard, "", 0)}
+		if id == frontend {
+			d.Notify = func(kind, _ string) { notesMu.Lock(); notes = append(notes, kind); notesMu.Unlock() }
+		}
 		go d.Run(ctx)
 	}
 	// Both daemons render the seed contract on start.
@@ -136,6 +142,12 @@ func TestDaemonsRunDemoTrace(t *testing.T) {
 	eventually(t, "thread to be decided", func() bool {
 		th, _, _ := be.Thread(ctx, "users-shape")
 		return th.State == bus.StateDecided
+	})
+	eventually(t, "the game to be told about the question and the decision", func() bool {
+		notesMu.Lock()
+		defer notesMu.Unlock()
+		got := strings.Join(notes, ",")
+		return strings.Contains(got, "working") && strings.Contains(got, "attention") && strings.Contains(got, "done")
 	})
 	for id, repo := range repos {
 		path := filepath.Join(repo, "contracts", "openapi.yaml")

@@ -95,7 +95,12 @@ cmd_laptop() {
 
   say "Starting the daemon ($agent liaisons); log: $project/.agentbus/daemon.log"
   mkdir -p "$project/.agentbus"
-  "$BIN/bus-daemon" -server "$server" -as "$as" -mandate "$mandate" -repo "$project" -liaison "$agent" \
+  local blob_flag=()
+  if command -v blob >/dev/null; then
+    blob_flag=(-blob)
+    echo "blob is installed: run 'blob' in another tab to play; it pauses when your liaison needs you."
+  fi
+  "$BIN/bus-daemon" -server "$server" -as "$as" -mandate "$mandate" -repo "$project" -liaison "$agent" ${blob_flag[@]+"${blob_flag[@]}"} \
     > "$project/.agentbus/daemon.log" 2>&1 &
   local daemon=$!
   trap 'kill $daemon 2>/dev/null' EXIT INT TERM
