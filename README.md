@@ -83,16 +83,22 @@ A blocking proposal means the proposer cannot continue until the thread is decid
 
 Each developer runs two kinds of agent session:
 
-- **Worker:** the developer's normal Claude Code session. It writes code, reads the rendered contracts, and can propose changes. It is never asked to negotiate.
-- **Liaison:** a headless session (`claude -p`, or any CLI with a headless mode such as `codex exec`) that the daemon starts when a message arrives. It receives the mandate and the new messages, has the negotiation tools and read-only access to the repository, takes its actions, and exits.
+- **Worker:** the developer's normal coding agent session (Claude Code or the Antigravity CLI, `agy`). It writes code, reads the rendered contracts, and can propose changes. It is never asked to negotiate.
+- **Liaison:** a headless session (`claude -p`, `agy --print`, or any CLI with a headless mode such as `codex exec`) that the daemon starts when a message arrives. It receives the mandate and the new messages, has the negotiation tools and read-only access to the repository, takes its actions, and exits.
 
 ### Delivering outcomes to a busy worker
 
-Coding agents act only when called, so the worker needs a way to learn about decisions without being stopped. `bus-hook` provides three Claude Code hooks:
+Coding agents act only when called, so the worker needs a way to learn about decisions without being stopped. For Claude Code, `bus-hook` provides three hooks:
 
 - **PostToolUse** adds new decisions to the worker's context after its next tool call, the same point at which Claude Code delivers a message the user types mid-task. Each event is delivered once, framed as lower priority than the user.
 - **UserPromptSubmit** attaches pending decisions to the user's next prompt.
 - **Stop** keeps the worker working while a decided change is not yet applied and acknowledged, or while its own blocking proposal is still being negotiated. It gives up after three nudges with no change, and a user interrupt always takes precedence.
+
+For the Antigravity CLI, `bus-hook install -agent agy` installs a workspace plugin (`.agents/plugins/agent-bus/`) that bundles the worker's MCP server, a `PreInvocation` hook that injects new decisions before each model call, a `Stop` hook with the same behavior as above (never on a user cancel), and a rules file explaining the protocol to the agent.
+
+### Terminal chat
+
+`bus chat` is a single terminal per developer for live demonstrations. The developer chats with their `agy` worker as a persistent session, and Agent Bus activity appears inline in the same conversation: proposals, counters, and decisions as they happen, the moment an update is delivered to the agent, and questions from the developer's own liaison. The developer answers those questions with `/answer` and resolves escalations with `/pick` without leaving the chat.
 
 ## Components
 
@@ -102,13 +108,14 @@ Coding agents act only when called, so the worker needs a way to learn about dec
 | `cmd/bus-daemon` | Per-laptop process: follows the feed, syncs rendered files, starts liaisons |
 | `cmd/bus-mcp` | MCP server over stdio, configured per agent with an identity and a role (`worker` or `liaison`) |
 | `cmd/bus-hook` | Claude Code hook handler and installer |
-| `cmd/bus` | Command-line interface for humans: list and inspect threads, answer questions, resolve escalations, follow the feed |
+| `cmd/bus` | Command-line interface for humans: list and inspect threads, answer questions, resolve escalations, follow the feed, and `bus chat` |
 | `internal/bus` | Ledger schema, state machine, edit application and validation |
 | `internal/server` | HTTP handlers, WebSocket feed, embedded dashboard |
 | `internal/render` | Rendering of `DECISIONS.md` and `contracts/` |
 | `internal/mcptools` | MCP tool definitions and schemas |
 | `internal/daemon` | Feed follower, file sync, liaison scheduling and runners |
-| `internal/hook` | Hook logic and settings installer |
+| `internal/hook` | Hook logic for Claude Code and agy, settings and plugin installers, liaison tool gate |
+| `internal/chat` | Terminal chat with an agy worker, with bus activity inline |
 | `internal/client` | HTTP client shared by the daemon, MCP server, hooks, and CLI |
 | `bus.json`, `mandates/`, `seed/` | Example configuration, mandates, and initial contracts |
 
@@ -144,4 +151,5 @@ Agent Bus was built for a hackathon and deliberately limits its scope:
 - Two parties and one central server. Voting and multi-party negotiation are out of scope.
 - No authentication. Callers identify themselves with a header, so the server should run only on a trusted network.
 - Agents never edit contract files directly; all changes go through the protocol.
-- Worker hooks are implemented for Claude Code. Other agents can use the MCP tools and check their inbox between tasks, with less immediate delivery.
+- Worker hooks are implemented for Claude Code and the Antigravity CLI. Other agents can use the MCP tools and check their inbox between tasks, with less immediate delivery.
+- Headless agy reads permission rules only from its global settings, so the installer adds narrowly scoped rules there (the agent-bus MCP server and writes to the project directory). A tool that headless agy is not permitted to use ends the agent's turn.

@@ -25,8 +25,8 @@ func main() {
 	as := flag.String("as", os.Getenv("AGENT_BUS_ID"), "agent identity, e.g. backend@abhay")
 	mandatePath := flag.String("mandate", os.Getenv("AGENT_BUS_MANDATE"), "mandate.md for this agent")
 	repo := flag.String("repo", ".", "repo to write DECISIONS.md and contracts/ into; liaisons run here")
-	liaisonCmd := flag.String("liaison", "claude", `"claude", or a command that takes the prompt as its last argument (e.g. "codex exec")`)
-	mcpBin := flag.String("mcp-bin", "", "bus-mcp executable for claude liaisons (default: next to this binary)")
+	liaisonCmd := flag.String("liaison", "claude", `"claude", "agy", or a command that takes the prompt as its last argument (e.g. "codex exec")`)
+	mcpBin := flag.String("mcp-bin", "", "bus-mcp executable for claude and agy liaisons (default: next to this binary)")
 	timeout := flag.Duration("liaison-timeout", 5*time.Minute, "max duration of one liaison session")
 	flag.Parse()
 
@@ -54,21 +54,37 @@ func main() {
 	}
 
 	logDir := filepath.Join(dir, ".agentbus", "logs")
-	var runner daemon.Runner
-	if *liaisonCmd == "claude" {
-		bin := *mcpBin
-		if bin == "" {
-			self, err := os.Executable()
-			if err != nil {
-				log.Fatal(err)
-			}
-			bin = filepath.Join(filepath.Dir(self), "bus-mcp")
+	// sibling finds another agent-bus binary next to this one.
+	sibling := func(name string) string {
+		self, err := os.Executable()
+		if err != nil {
+			log.Fatal(err)
 		}
+		bin := filepath.Join(filepath.Dir(self), name)
 		if _, err := os.Stat(bin); err != nil {
-			log.Fatalf("bus-mcp not found at %s; build it or pass -mcp-bin", bin)
+			log.Fatalf("%s not found at %s; build it with go build -o bin/ ./cmd/...", name, bin)
 		}
-		runner = daemon.ClaudeRunner{Bin: "claude", MCPBin: bin, Server: *server, ID: *as, Dir: dir, LogDir: logDir, Out: os.Stderr}
-	} else {
+		return bin
+	}
+	if *mcpBin == "" && (*liaisonCmd == "claude" || *liaisonCmd == "agy") {
+		*mcpBin = sibling("bus-mcp")
+	}
+	var runner daemon.Runner
+	switch *liaisonCmd {
+	case "claude":
+		runner = daemon.ClaudeRunner{Bin: "claude", MCPBin: *mcpBin, Server: *server, ID: *as, Dir: dir, LogDir: logDir, Out: os.Stderr}
+	case "agy":
+		cache, err := os.UserCacheDir()
+		if err != nil {
+			log.Fatal(err)
+		}
+		r := daemon.AgyRunner{Bin: "agy", MCPBin: *mcpBin, HookBin: sibling("bus-hook"), Server: *server, ID: *as, Repo: dir,
+			Workspace: filepath.Join(cache, "agent-bus", "liaison", strings.ReplaceAll(*as, "/", "_")), LogDir: logDir, Out: os.Stderr}
+		if err := r.Prepare(); err != nil {
+			log.Fatal(err)
+		}
+		runner = r
+	default:
 		runner = daemon.CommandRunner{Argv: strings.Fields(*liaisonCmd), Dir: dir, LogDir: logDir, Out: os.Stderr}
 	}
 

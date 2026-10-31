@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"agentbus/internal/hook"
 )
 
 // ClaudeRunner starts `claude -p` with only the agent-bus MCP server and
@@ -39,6 +41,50 @@ func (r ClaudeRunner) Run(ctx context.Context, prompt string) error {
 		"--allowedTools", "mcp__agent-bus", "Read", "Grep", "Glob")
 	cmd.Stdin = strings.NewReader(prompt) // keeps the prompt clear of variadic flags
 	return runLogged(cmd, r.Dir, r.LogDir, r.Out, prompt)
+}
+
+// AgyRunner starts the Antigravity CLI headless (`agy --print`). It runs from
+// its own workspace outside the repo, so it loads only the liaison plugin
+// (liaison-role MCP server plus a PreToolUse gate that allows reading and
+// agent-bus tools only), and sees the repo through --add-dir.
+type AgyRunner struct {
+	Bin       string // agy executable
+	MCPBin    string // bus-mcp executable
+	HookBin   string // bus-hook executable, for the read-only gate
+	Server    string
+	ID        string
+	Repo      string // the project, added read-only
+	Workspace string // the liaison's own workspace directory
+	LogDir    string
+	Out       io.Writer
+}
+
+// Prepare creates the liaison workspace. A .git directory bounds agy's
+// customization discovery to it.
+func (r AgyRunner) Prepare() error {
+	if err := os.MkdirAll(r.Workspace, 0o755); err != nil {
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(r.Workspace, ".git")); os.IsNotExist(err) {
+		if out, err := exec.Command("git", "init", "-q", r.Workspace).CombinedOutput(); err != nil {
+			return fmt.Errorf("git init %s: %v: %s", r.Workspace, err, out)
+		}
+	}
+	gate := hook.ShellQuote(r.HookBin) + " -format agy -liaison-gate"
+	_, err := hook.WriteAgyPlugin(r.Workspace, hook.AgyPlugin{
+		MCPCommand: r.MCPBin,
+		MCPArgs:    []string{"-server", r.Server, "-as", r.ID, "-role", "liaison"},
+		Hooks: map[string]any{
+			"PreToolUse": []any{map[string]any{"matcher": "*", "hooks": []any{hook.AgyHook(gate)}}},
+		},
+	})
+	return err
+}
+
+func (r AgyRunner) Run(ctx context.Context, prompt string) error {
+	// --print=<prompt> keeps the prompt attached to its flag.
+	cmd := exec.CommandContext(ctx, r.Bin, "--print="+prompt, "--add-dir", r.Repo)
+	return runLogged(cmd, r.Workspace, r.LogDir, r.Out, prompt)
 }
 
 // CommandRunner runs any headless agent CLI with the prompt as its last

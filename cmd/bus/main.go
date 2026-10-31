@@ -6,6 +6,7 @@
 //	bus resolve <thread> <seq> [note]    pick a proposal on an escalated thread
 //	bus contract <name> [rev]            print a contract
 //	bus tail                             follow the live event feed
+//	bus chat -as <agent-id> [-dir PATH]  chat with your agy worker, bus activity inline
 //
 // Set AGENT_BUS_URL and AGENT_BUS_HUMAN (your name, e.g. abhay) or pass
 // -server and -human.
@@ -16,10 +17,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"agentbus/internal/bus"
+	"agentbus/internal/chat"
 	"agentbus/internal/client"
 
 	"github.com/coder/websocket"
@@ -30,7 +34,7 @@ func main() {
 	server := flag.String("server", env("AGENT_BUS_URL", "http://localhost:7070"), "busd base URL")
 	human := flag.String("human", os.Getenv("AGENT_BUS_HUMAN"), "your name; you act as human:<name>")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: bus [-server URL] [-human NAME] threads|show|answer|resolve|contract|tail ...")
+		fmt.Fprintln(os.Stderr, "usage: bus [-server URL] [-human NAME] threads|show|answer|resolve|contract|tail|chat ...")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -91,6 +95,8 @@ func main() {
 		ct, err := c.Contract(ctx, rest[0], rev)
 		fail(err)
 		fmt.Printf("# %s rev %d (owner %s)\n%s", ct.Name, ct.Rev, ct.Owner, ct.Content)
+	case "chat":
+		runChat(*server, rest)
 	case "tail":
 		conn, _, err := websocket.Dial(ctx, c.FeedURL(0), nil)
 		fail(err)
@@ -104,6 +110,39 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
+}
+
+// runChat starts a chat with this person's worker agent. The agent runs in
+// -dir, which should have the agent-bus plugin installed
+// (bus-hook install -agent agy).
+func runChat(server string, args []string) {
+	fs := flag.NewFlagSet("chat", flag.ExitOnError)
+	fs.StringVar(&server, "server", server, "busd base URL")
+	as := fs.String("as", os.Getenv("AGENT_BUS_ID"), "your worker agent's identity, e.g. frontend@teammate")
+	dir := fs.String("dir", ".", "project the agent works in")
+	agentCmd := fs.String("agent-cmd", strings.Join(chat.AgyArgv, " "), "agent command (a stream-json session)")
+	fs.Parse(args)
+	if *as == "" {
+		fail(fmt.Errorf("-as (or AGENT_BUS_ID) is required"))
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	c := client.New(server, *as)
+	agents, err := c.Agents(ctx)
+	fail(err)
+	human := ""
+	for _, a := range agents {
+		if a.ID == *as {
+			human = "human:" + a.Human
+		}
+	}
+	if human == "" {
+		fail(fmt.Errorf("agent %q is not registered on the bus", *as))
+	}
+	_, noColor := os.LookupEnv("NO_COLOR")
+	ch := &chat.Chat{Client: c, Human: human, Argv: strings.Fields(*agentCmd), Dir: *dir,
+		In: os.Stdin, Out: os.Stdout, Color: !noColor}
+	fail(ch.Run(ctx))
 }
 
 func printResult(res *bus.Result) {

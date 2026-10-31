@@ -5,7 +5,7 @@ How to build, run, and test Agent Bus. For what the project is and how it works,
 ## Requirements
 
 - Go 1.27 or newer, as declared in `go.mod` (Go 1.21+ downloads the right toolchain automatically)
-- Claude Code (`claude` on the PATH) for real liaisons and workers
+- A coding agent CLI for workers and liaisons: Claude Code (`claude`) or the Antigravity CLI (`agy`), signed in
 - Optional: Codex CLI, used as a liaison via `-liaison "codex exec"`
 
 ## Build
@@ -137,9 +137,34 @@ Give Claude Code a multi-step task. While it works, propose and accept a contrac
 
 Add `.agentbus/` to the project repository's `.gitignore`. The hooks are written to `.claude/settings.local.json`, which is personal and not committed.
 
+### 6. Antigravity CLI (agy) and the terminal chat
+
+Each laptop can use `agy` instead of Claude Code for both the worker and the liaison. This is also the setup for the terminal chat demo, where each person works in a single window.
+
+1. **Install the worker plugin** in the project repository (run once per laptop):
+   ```sh
+   /abs/path/bin/bus-hook install -agent agy -server http://<server-ip>:7070 -as frontend@teammate -project ~/code/app
+   ```
+   This writes `.agents/plugins/agent-bus/` into the project (MCP tools, hooks, rules) and adds two permission rules to `~/.gemini/antigravity-cli/settings.json`, which headless agy requires: `mcp(agent-bus_agent-bus/*)` and `write_file(<project>)`. Headless agy ends a turn when it is denied a tool, so also grant the commands your worker needs, for example `-allow-command "npm test" -allow-command "grep"`. Add `.agents/plugins/agent-bus/` to the project's `.gitignore`.
+
+2. **Run the daemon with agy liaisons:**
+   ```sh
+   ./bin/bus-daemon -liaison agy -as frontend@teammate -mandate mandates/frontend.md -repo ~/code/app
+   ```
+   Each liaison runs from its own workspace under `~/Library/Caches/agent-bus/liaison/`, so it loads only the liaison plugin. A `PreToolUse` hook limits it to reading files and the agent-bus tools.
+
+3. **Open the chat** (the demo window):
+   ```sh
+   ./bin/bus chat -server http://<server-ip>:7070 -as frontend@teammate -dir ~/code/app
+   ```
+   Type to talk to your agent. Agent Bus activity appears inline; `[bus] update delivered to the agent` marks the moment a decision reaches it. Commands: `/answer <seq> <text>`, `/pick <seq>`, `/threads`, `/show <thread>`, `/help`, `/quit`.
+
+A demonstration with two laptops: the backend person asks their agent in `bus chat` to rename `users.name` to `display_name` and propose the API change. The frontend person's chat shows the proposal, then `QUESTION FOR YOU` from their liaison; they reply with `/answer`. The liaisons settle the counter-proposal, both chats show `DECIDED`, and the frontend agent updates its code to match. Keep the dashboard on the projector throughout.
+
 ## Troubleshooting
 
 - **A liaison never starts:** check that the daemon's `-as` identity is listed in `bus.json` and that the daemon prints `following <url>`.
 - **A liaison leaves messages unhandled:** the daemon does not restart it for the same messages; it waits for new activity. Read the transcript in `.agentbus/logs/`.
 - **The worker does not see updates:** run `/hooks` in Claude Code to confirm the three hooks are loaded, and check that `bus-mcp` is listed under `/mcp`.
+- **agy turns end with no output:** headless agy was denied a tool. The chat shows the notice as `[agent] ...`; add the rule it names, for example with `bus-hook install -agent agy -allow-command <prefix>`.
 - **Proposal rejected as stale:** the contract moved on. Read it again with `get_contract` and propose against the new revision.
