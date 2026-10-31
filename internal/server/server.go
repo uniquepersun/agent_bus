@@ -34,12 +34,13 @@ var dashboard []byte
 const MaxWait = 50 * time.Second
 
 type Server struct {
-	bus *bus.Bus
-	mux *http.ServeMux
+	bus      *bus.Bus
+	mux      *http.ServeMux
+	activity *activityHub
 }
 
 func New(b *bus.Bus) *Server {
-	s := &Server{bus: b, mux: http.NewServeMux()}
+	s := &Server{bus: b, mux: http.NewServeMux(), activity: newActivityHub()}
 	s.mux.HandleFunc("GET /api/state", s.state)
 	s.mux.HandleFunc("GET /api/threads", s.threads)
 	s.mux.HandleFunc("GET /api/threads/{id}", s.thread)
@@ -54,6 +55,8 @@ func New(b *bus.Bus) *Server {
 	s.mux.HandleFunc("POST /api/ack", s.ack)
 	s.mux.HandleFunc("PUT /api/agents/{id}/mandate", s.setMandate)
 	s.mux.HandleFunc("GET /ws", s.ws)
+	s.mux.HandleFunc("POST /api/activity", s.postActivity)
+	s.mux.HandleFunc("GET /ws/activity", s.activityFeed)
 	s.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(dashboard)

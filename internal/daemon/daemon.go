@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"agentbus/internal/bus"
@@ -38,6 +39,10 @@ type Daemon struct {
 	// Notify, when set, reports activity to the human outside the terminal
 	// (for example the blob game): kind is "working", "attention" or "done".
 	Notify func(kind, message string)
+
+	// Activity, when set, shares what the liaison is doing on the bus's live
+	// activity stream: kind is "status" or "message".
+	Activity func(kind, text string)
 
 	human string
 	kicks chan struct{}
@@ -122,6 +127,12 @@ func (d *Daemon) handle(ctx context.Context, e bus.Event) {
 	}
 }
 
+func (d *Daemon) activity(kind, text string) {
+	if d.Activity != nil {
+		d.Activity(kind, text)
+	}
+}
+
 func (d *Daemon) notify(kind, message string) {
 	if d.Notify != nil {
 		d.Notify(kind, message)
@@ -174,14 +185,22 @@ func (d *Daemon) liaisonLoop(ctx context.Context) {
 			d.Log.Printf("%d message(s) for the liaison; starting it", len(inbox))
 		}
 		d.notify("working", "agent-bus: liaison negotiating")
+		var handling []string
+		for _, e := range inbox {
+			handling = append(handling, fmt.Sprintf("#%d %s %s", e.Seq, e.Type, e.Thread))
+		}
+		d.activity("status", "started, handling "+strings.Join(handling, ", "))
 		start := time.Now()
 		runCtx, cancel := context.WithTimeout(ctx, d.LiaisonTimeout)
 		err = d.Liaison.Run(runCtx, d.prompt(inbox))
 		cancel()
+		took := time.Since(start).Round(time.Second)
 		if err != nil {
-			d.Log.Printf("liaison failed after %s: %v", time.Since(start).Round(time.Second), err)
+			d.Log.Printf("liaison failed after %s: %v", took, err)
+			d.activity("status", fmt.Sprintf("failed after %s", took))
 		} else {
-			d.Log.Printf("liaison finished in %s", time.Since(start).Round(time.Second))
+			d.Log.Printf("liaison finished in %s", took)
+			d.activity("status", fmt.Sprintf("finished in %s", took))
 		}
 		d.kick() // pick up anything that arrived meanwhile
 	}

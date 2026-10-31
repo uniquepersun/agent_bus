@@ -159,3 +159,22 @@ func TestWorkerGate(t *testing.T) {
 		}
 	}
 }
+
+func TestSummarize(t *testing.T) {
+	for _, tc := range []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"Edit", map[string]any{"file_path": "/Users/a/code/app/src/UserCard.tsx"}, "Edit .../app/src/UserCard.tsx"},
+		{"Bash", map[string]any{"command": "go   test ./..."}, "Bash go test ./..."},
+		{"mcp__agent-bus__propose", nil, "agent-bus propose"},
+		{"call_mcp_tool", map[string]any{"ServerName": "agent-bus_agent-bus", "ToolName": "accept"}, "agent-bus accept"},
+		{"run_command", map[string]any{"CommandLine": "grep -rn name src/"}, "run_command grep -rn name src/"},
+		{"TodoWrite", map[string]any{"todos": []any{}}, "TodoWrite"},
+	} {
+		if got := Summarize(tc.tool, tc.args); got != tc.want {
+			t.Errorf("Summarize(%s) = %q, want %q", tc.tool, got, tc.want)
+		}
+	}
+}

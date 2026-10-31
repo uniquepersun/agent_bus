@@ -30,9 +30,11 @@ const maxDiffLines = 60
 
 // Input is the subset of Claude Code's hook input we use.
 type Input struct {
-	SessionID      string `json:"session_id"`
-	HookEventName  string `json:"hook_event_name"`
-	StopHookActive bool   `json:"stop_hook_active"`
+	SessionID      string         `json:"session_id"`
+	HookEventName  string         `json:"hook_event_name"`
+	StopHookActive bool           `json:"stop_hook_active"`
+	ToolName       string         `json:"tool_name"`
+	ToolInput      map[string]any `json:"tool_input"`
 }
 
 type Hook struct {
@@ -52,6 +54,9 @@ func (h *Hook) Handle(ctx context.Context, in Input) (map[string]any, error) {
 	defer h.save(in.SessionID, st)
 	switch in.HookEventName {
 	case "PostToolUse", "UserPromptSubmit":
+		if in.HookEventName == "PostToolUse" && in.ToolName != "" {
+			Report(h.Client, "worker", "tool", Summarize(in.ToolName, in.ToolInput))
+		}
 		text, err := h.inject(ctx, st)
 		if err != nil || text == "" {
 			return nil, err

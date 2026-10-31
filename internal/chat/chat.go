@@ -44,6 +44,7 @@ type Chat struct {
 	streaming bool // agent text is mid-line
 	seqThread map[int64]string
 	nudged    int64 // last decision the idle agent was woken up for
+	quiet     bool  // hide other agents' activity
 }
 
 // Run chats until the input ends, the user types /quit, or ctx ends.
@@ -74,6 +75,7 @@ func (c *Chat) Run(ctx context.Context) error {
 	go func() { c.readAgent(stdout); close(agentDone) }()
 	go c.readStderr(stderr)
 	go c.followBus(ctx)
+	go c.followActivity(ctx)
 
 	c.banner(ctx)
 	c.prompt()
@@ -159,6 +161,16 @@ func (c *Chat) command(ctx context.Context, line string) {
 		}
 		res, err := c.as(c.Human).Act(ctx, thread, "resolve", bus.ResolveReq{Pick: seq, Note: strings.Join(fields[2:], " ")})
 		c.report(res, err, "Escalation resolved.")
+	case "/activity":
+		c.mu.Lock()
+		c.quiet = len(fields) > 1 && fields[1] == "off"
+		quiet := c.quiet
+		c.mu.Unlock()
+		if quiet {
+			c.println("Other agents' activity hidden. /activity on to show it again.")
+		} else {
+			c.println("Showing other agents' activity.")
+		}
 	case "/threads":
 		ths, err := c.Client.Threads(ctx)
 		if err != nil {
@@ -197,6 +209,7 @@ func (c *Chat) command(ctx context.Context, line string) {
 const helpText = `Commands:
   /answer <seq> <text>   answer a question your liaison asked you
   /pick <seq> [note]     decide an escalated thread with that proposal
+  /activity on|off       show or hide what the other agents are doing
   /threads               list threads
   /show <thread>         a thread's history with diffs
   /quit                  leave
@@ -447,6 +460,40 @@ func (c *Chat) wake(e bus.Event) {
 		"content": fmt.Sprintf("[agent-bus] Contract update #%d arrived. Apply it to the code as described in the agent-bus update, then ack it.", e.Seq)}})
 	if _, err := c.agent.Write(append(msg, '\n')); err != nil {
 		c.println(c.paint(red, "could not send to the agent: "+err.Error()))
+	}
+}
+
+// followActivity shows what the other agents (and this person's own
+// liaison) are doing as it happens. This worker's own tool calls are already
+// shown from its session.
+func (c *Chat) followActivity(ctx context.Context) {
+	for ctx.Err() == nil {
+		conn, _, err := websocket.Dial(ctx, c.Client.ActivityURL(0), nil)
+		if err == nil {
+			for {
+				var a client.Activity
+				if err := wsjson.Read(ctx, conn, &a); err != nil {
+					break
+				}
+				c.mu.Lock()
+				quiet := c.quiet
+				c.mu.Unlock()
+				if quiet || (a.From == c.Client.From && a.Role == "worker") {
+					continue
+				}
+				color := blue
+				if a.Role == "liaison" {
+					color = yellow
+				}
+				c.println(c.paint(dim, "  ") + c.paint(color, fmt.Sprintf("[%s %s]", a.From, a.Role)) + " " + c.paint(dim, a.Text))
+				c.prompt()
+			}
+			conn.CloseNow()
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
 

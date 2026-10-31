@@ -142,6 +142,14 @@ func TestChat(t *testing.T) {
 	waitFor("asking it to apply the update")
 	waitFor("agent> echo: [agent-bus] Contract update")
 
+	// The other agent's activity shows up; this worker's own does not.
+	client.New(ts.URL, frontend).PostActivity(ctx, "worker", "tool", "own tool call")
+	client.New(ts.URL, backend).PostActivity(ctx, "worker", "tool", "Edit internal/users.go")
+	waitFor("[backend@abhay worker] Edit internal/users.go")
+	if strings.Contains(out.String(), "own tool call") {
+		t.Fatal("chat repeated this worker's own activity")
+	}
+
 	say("/threads")
 	waitFor("users-shape")
 	say("/quit")

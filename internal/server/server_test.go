@@ -156,3 +156,37 @@ func TestDashboardIsServed(t *testing.T) {
 		t.Fatalf("GET /: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 }
+
+func TestActivityStream(t *testing.T) {
+	ts := newServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	post := func(from, text string) int {
+		return do(t, ts, "POST", "/api/activity", from, map[string]string{"role": "worker", "kind": "tool", "text": text}, nil)
+	}
+	if code := post("mallory@nowhere", "x"); code != 403 {
+		t.Fatalf("unknown agent: %d", code)
+	}
+	if code := post(backend, "Read openapi.yaml"); code != 200 {
+		t.Fatalf("post: %d", code)
+	}
+	feed, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/ws/activity?recent=10", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer feed.CloseNow()
+	post(frontend, "Edit src/UserCard.tsx")
+
+	var got []string
+	for len(got) < 2 {
+		var a Activity
+		if err := wsjson.Read(ctx, feed, &a); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, a.From+": "+a.Text)
+	}
+	if got[0] != backend+": Read openapi.yaml" || got[1] != frontend+": Edit src/UserCard.tsx" {
+		t.Fatalf("activity: %v", got)
+	}
+}

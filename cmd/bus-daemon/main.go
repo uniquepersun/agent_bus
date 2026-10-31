@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"flag"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -19,6 +20,7 @@ import (
 
 	"agentbus/internal/client"
 	"agentbus/internal/daemon"
+	"agentbus/internal/hook"
 )
 
 func main() {
@@ -71,23 +73,26 @@ func main() {
 	if *mcpBin == "" && (*liaisonCmd == "claude" || *liaisonCmd == "agy") {
 		*mcpBin = sibling("bus-mcp")
 	}
+	// The liaison's final reply goes to this terminal and the activity stream.
+	liaisonOut := io.MultiWriter(os.Stderr, activityWriter{c})
 	var runner daemon.Runner
 	switch *liaisonCmd {
 	case "claude":
-		runner = daemon.ClaudeRunner{Bin: "claude", MCPBin: *mcpBin, Server: *server, ID: *as, Dir: dir, LogDir: logDir, Out: os.Stderr}
+		runner = daemon.ClaudeRunner{Bin: "claude", MCPBin: *mcpBin, HookBin: sibling("bus-hook"), Server: *server, ID: *as,
+			Dir: dir, LogDir: logDir, Out: liaisonOut}
 	case "agy":
 		cache, err := os.UserCacheDir()
 		if err != nil {
 			log.Fatal(err)
 		}
 		r := daemon.AgyRunner{Bin: "agy", MCPBin: *mcpBin, HookBin: sibling("bus-hook"), Server: *server, ID: *as,
-			Workspace: filepath.Join(cache, "agent-bus", "liaison", strings.ReplaceAll(*as, "/", "_")), LogDir: logDir, Out: os.Stderr}
+			Workspace: filepath.Join(cache, "agent-bus", "liaison", strings.ReplaceAll(*as, "/", "_")), LogDir: logDir, Out: liaisonOut}
 		if err := r.Prepare(); err != nil {
 			log.Fatal(err)
 		}
 		runner = r
 	default:
-		runner = daemon.CommandRunner{Argv: strings.Fields(*liaisonCmd), Dir: dir, LogDir: logDir, Out: os.Stderr}
+		runner = daemon.CommandRunner{Argv: strings.Fields(*liaisonCmd), Dir: dir, LogDir: logDir, Out: liaisonOut}
 	}
 
 	var notify func(kind, message string)
@@ -103,10 +108,24 @@ func main() {
 		Log:            log.New(os.Stderr, "", log.Ltime),
 		LiaisonTimeout: *timeout,
 		Notify:         notify,
+		Activity: func(kind, text string) {
+			go hook.Report(c, "liaison", kind, text)
+		},
 	}
 	if err := d.Run(ctx); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// activityWriter shares the liaison's reply on the bus's activity stream.
+type activityWriter struct{ c *client.Client }
+
+func (w activityWriter) Write(p []byte) (int, error) {
+	text := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(p)), "liaison:"))
+	if text != "" {
+		go hook.Report(w.c, "liaison", "message", strings.Join(strings.Fields(text), " "))
+	}
+	return len(p), nil
 }
 
 // blobNotifier forwards activity to the blob game with `blob send`. With no

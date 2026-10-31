@@ -17,13 +17,14 @@ import (
 // ClaudeRunner starts `claude -p` with only the agent-bus MCP server and
 // read-only file tools.
 type ClaudeRunner struct {
-	Bin    string // claude executable
-	MCPBin string // bus-mcp executable
-	Server string // busd URL
-	ID     string // agent identity
-	Dir    string // working directory (the repo)
-	LogDir string // full transcripts go here
-	Out    io.Writer
+	Bin     string // claude executable
+	MCPBin  string // bus-mcp executable
+	HookBin string // bus-hook executable, to report tool calls (optional)
+	Server  string // busd URL
+	ID      string // agent identity
+	Dir     string // working directory (the repo)
+	LogDir  string // full transcripts go here
+	Out     io.Writer
 }
 
 func (r ClaudeRunner) Run(ctx context.Context, prompt string) error {
@@ -36,9 +37,21 @@ func (r ClaudeRunner) Run(ctx context.Context, prompt string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.CommandContext(ctx, r.Bin, "-p",
-		"--mcp-config", string(cfg), "--strict-mcp-config",
-		"--allowedTools", "mcp__agent-bus", "Read", "Grep", "Glob")
+	args := []string{"-p", "--mcp-config", string(cfg), "--strict-mcp-config"}
+	if r.HookBin != "" {
+		// Share the liaison's tool calls on the bus's activity stream.
+		report := strings.Join([]string{hook.ShellQuote(r.HookBin), "-server", hook.ShellQuote(r.Server),
+			"-as", hook.ShellQuote(r.ID), "-report", "liaison"}, " ")
+		settings, err := json.Marshal(map[string]any{"hooks": map[string]any{"PostToolUse": []any{
+			map[string]any{"matcher": "*", "hooks": []any{map[string]any{"type": "command", "command": report, "timeout": 5}}},
+		}}})
+		if err != nil {
+			return err
+		}
+		args = append(args, "--settings", string(settings))
+	}
+	args = append(args, "--allowedTools", "mcp__agent-bus", "Read", "Grep", "Glob")
+	cmd := exec.CommandContext(ctx, r.Bin, args...)
 	cmd.Stdin = strings.NewReader(prompt) // keeps the prompt clear of variadic flags
 	return runLogged(cmd, r.Dir, r.LogDir, r.Out, prompt)
 }
@@ -70,7 +83,8 @@ func (r AgyRunner) Prepare() error {
 			return fmt.Errorf("git init %s: %v: %s", r.Workspace, err, out)
 		}
 	}
-	gate := hook.ShellQuote(r.HookBin) + " -format agy -liaison-gate"
+	gate := strings.Join([]string{hook.ShellQuote(r.HookBin), "-server", hook.ShellQuote(r.Server),
+		"-as", hook.ShellQuote(r.ID), "-format", "agy", "-liaison-gate"}, " ")
 	_, err := hook.WriteAgyPlugin(r.Workspace, hook.AgyPlugin{
 		MCPCommand: r.MCPBin,
 		MCPArgs:    []string{"-server", r.Server, "-as", r.ID, "-role", "liaison"},

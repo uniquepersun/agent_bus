@@ -65,7 +65,12 @@ aside section { margin-bottom: 20px; }
 .tag.alert { border-color: var(--escalated); color: var(--escalated); }
 .empty { color: var(--muted); font-size: 12px; padding: 8px 2px; }
 
-.feed { grid-area: feed; overflow: auto; border-top: 1px solid var(--border); background: var(--panel); padding: 10px 14px; }
+.feed { grid-area: feed; overflow: hidden; border-top: 1px solid var(--border); background: var(--panel); display: grid; grid-template-columns: 1fr 1fr; }
+.feed > div { overflow: auto; padding: 10px 14px; min-width: 0; }
+.feed > div + div { border-left: 1px solid var(--border); }
+.act .who-agent { display: inline-block; min-width: 190px; font-weight: 600; }
+.act .role-liaison { color: var(--countered); } .act .role-worker { color: var(--proposed); }
+.act .kind-status, .act .kind-message { color: var(--text); } .act .kind-tool { color: var(--muted); }
 .feed ol { list-style: none; margin: 0; padding: 0; }
 .feed li { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .feed li:hover { color: var(--accent); }
@@ -128,8 +133,8 @@ pre.contract-body { white-space: pre; overflow: auto; border: 1px solid var(--bo
   <section class="detail" id="detail"></section>
 
   <section class="feed">
-    <h2>Live feed</h2>
-    <ol id="feed"></ol>
+    <div><h2>Ledger</h2><ol id="feed"></ol></div>
+    <div><h2>Agent activity</h2><ol id="activity"></ol></div>
   </section>
 </div>
 
@@ -357,6 +362,25 @@ function onEvent(e) {
   scheduleRefresh();
 }
 
+function activityLine(a) {
+  return el("li", { class: "act" },
+    el("span", { class: "when mono" }, new Date(a.ts).toLocaleTimeString()),
+    el("span", { class: "who-agent role-" + a.role }, a.from + " " + a.role),
+    el("span", { class: "mono kind-" + a.kind }, a.text));
+}
+
+function connectActivity() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/ws/activity?recent=100`);
+  const list = $("activity");
+  ws.onopen = () => list.replaceChildren();
+  ws.onmessage = (m) => {
+    list.prepend(activityLine(JSON.parse(m.data)));
+    while (list.children.length > 300) list.lastChild.remove();
+  };
+  ws.onclose = () => setTimeout(connectActivity, 1500);
+}
+
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws?since=${state.lastSeq}`);
@@ -379,7 +403,7 @@ function openFromHash() {
   if (m) openThread(decodeURIComponent(m[1]));
 }
 
-loadState().then(() => { openFromHash(); connect(); }).catch((e) => { $("status-text").textContent = "error: " + e.message; });
+loadState().then(() => { openFromHash(); connect(); connectActivity(); }).catch((e) => { $("status-text").textContent = "error: " + e.message; });
 </script>
 </body>
 </html>

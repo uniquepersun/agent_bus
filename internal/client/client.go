@@ -170,6 +170,36 @@ func (c *Client) FeedURL(since int64) string {
 	return u + "/ws?since=" + strconv.FormatInt(since, 10)
 }
 
+// Activity is a live report of what an agent is doing (not in the ledger).
+type Activity struct {
+	TS   int64  `json:"ts"`
+	From string `json:"from"`
+	Role string `json:"role"` // "worker" or "liaison"
+	Kind string `json:"kind"` // "tool", "message" or "status"
+	Text string `json:"text"`
+}
+
+// PostActivity reports what this agent is doing. Callers use a short
+// timeout: activity is best effort and must never slow an agent down.
+func (c *Client) PostActivity(ctx context.Context, role, kind, text string) error {
+	return c.do(ctx, "POST", "/api/activity", Activity{Role: role, Kind: kind, Text: text}, nil)
+}
+
+// ActivityURL is the WebSocket URL of the live activity stream, starting with
+// the last `recent` entries.
+func (c *Client) ActivityURL(recent int) string {
+	u := c.BaseURL
+	if rest, ok := strings.CutPrefix(u, "http"); ok {
+		u = "ws" + rest
+	}
+	return u + "/ws/activity?recent=" + strconv.Itoa(recent)
+}
+
+// FormatActivity renders activity as one line.
+func FormatActivity(a Activity) string {
+	return fmt.Sprintf("[%s %s] %s", a.From, a.Role, a.Text)
+}
+
 // FormatEvent renders an event as one line for terminals and prompts.
 func FormatEvent(e bus.Event) string {
 	var sb strings.Builder

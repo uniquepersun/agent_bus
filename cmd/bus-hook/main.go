@@ -35,6 +35,7 @@ func main() {
 	workerGate := flag.Bool("worker-gate", false, "agy PreToolUse: refuse shell commands outside -allow-command")
 	var commands multiFlag
 	flag.Var(&commands, "allow-command", "with -worker-gate: an allowed command prefix (repeatable)")
+	report := flag.String("report", "", "claude PostToolUse: only share the tool call on the activity stream, as this role")
 	flag.Parse()
 
 	if *format == "agy" {
@@ -44,6 +45,12 @@ func main() {
 	var in hook.Input
 	if err := json.NewDecoder(os.Stdin).Decode(&in); err != nil || *as == "" {
 		return // never break the worker
+	}
+	if *report != "" {
+		if in.ToolName != "" {
+			hook.Report(client.New(*server, *as), *report, "tool", hook.Summarize(in.ToolName, in.ToolInput))
+		}
+		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -69,9 +76,11 @@ func runAgy(server, as, event string, gate, workerGate bool, commands []string) 
 		// agy's own MCP tool schemas are the only files headless agy lets
 		// it read without a rule.
 		out = hook.LiaisonGate(in, filepath.Join(filepath.Dir(hook.AgySettingsPath()), "mcp"))
+		reportGate(server, as, "liaison", in, out)
 		return
 	case workerGate:
 		out = hook.WorkerGate(in, commands)
+		reportGate(server, as, "worker", in, out)
 		return
 	}
 	if as == "" {
@@ -85,6 +94,14 @@ func runAgy(server, as, event string, gate, workerGate bool, commands []string) 
 		return
 	}
 	out = res
+}
+
+// reportGate shares a gated tool call on the bus's activity stream.
+func reportGate(server, as, role string, in hook.AgyInput, decision map[string]any) {
+	if as == "" {
+		return
+	}
+	hook.Report(client.New(server, as), role, "tool", hook.GateSummary(in, decision))
 }
 
 func newHook(server, as string) *hook.Hook {
@@ -132,7 +149,7 @@ func install(args []string) {
 		cmd := func(event string) string {
 			return strings.Join(append(base, "-format", "agy", "-event", event), " ")
 		}
-		gateArgs := []string{hook.ShellQuote(self), "-format", "agy", "-worker-gate"}
+		gateArgs := append(append([]string{}, base...), "-format", "agy", "-worker-gate")
 		for _, c := range commands {
 			gateArgs = append(gateArgs, "-allow-command", hook.ShellQuote(c))
 		}
