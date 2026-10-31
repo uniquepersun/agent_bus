@@ -110,6 +110,10 @@ Coding agents act only when called, so the worker needs a way to learn about dec
 
 For the Antigravity CLI, `bus-hook install -agent agy` installs a workspace plugin (`.agents/plugins/agent-bus/`) that bundles the worker's MCP server, a `PreInvocation` hook that injects new decisions before each model call, a `Stop` hook with the same behavior as above (never on a user cancel), and a rules file explaining the protocol to the agent.
 
+### Live agent activity
+
+Besides the ledger, the server relays a live, unrecorded activity stream: every tool call each worker and liaison makes (reported by the hooks), and when each liaison starts, what it handled, and how it finished. The dashboard shows it in an "Agent activity" panel, and `bus chat` shows the other agents' activity inline, so each laptop sees what the agent on the other machine is doing. `/activity off` hides it.
+
 ### Terminal chat
 
 `bus chat` is a single terminal per developer for live demonstrations. The developer chats with their `agy` worker as a persistent session, and Agent Bus activity appears inline in the same conversation: proposals, counters, and decisions as they happen, the moment an update is delivered to the agent, and questions from the developer's own liaison. The developer answers those questions with `/answer` and resolves escalations with `/pick` without leaving the chat.

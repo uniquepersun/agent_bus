@@ -96,6 +96,8 @@ export function UserCard({ user }: { user: User }) {
 5. **Laptop B:** the chat shows `update delivered to the agent`, and the frontend agent updates `UserCard.tsx` to use `display_name`. Open the file to show it.
 6. Close on `~/agentbus-demo/frontend/DECISIONS.md`: the permanent record of the decision.
 
+Throughout, each chat also shows what the agent on the other laptop is doing (its tool calls, in blue for workers and yellow for liaisons), and the dashboard's "Agent activity" panel shows both sides. Hide it in a chat with `/activity off`.
+
 Each agy liaison turn takes one to two minutes (Claude Code is faster), so the whole run takes about 5 to 8 minutes. Talk through the dashboard while the cards move.
 
 **With blob:** run `blob` in another terminal tab on each laptop. The game pauses with a card when your liaison has a question for you; answer in the chat, then keep playing.
