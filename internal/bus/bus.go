@@ -387,6 +387,13 @@ func (b *Bus) Thread(id string) (*Thread, []Event, error) {
 	return th, evs, err
 }
 
+// Head returns the latest ledger seq.
+func (b *Bus) Head() (int64, error) {
+	var seq int64
+	err := b.db.QueryRow(`SELECT COALESCE(MAX(seq), 0) FROM events`).Scan(&seq)
+	return seq, err
+}
+
 // Events returns ledger events after seq, oldest first.
 func (b *Bus) Events(after int64) ([]Event, error) {
 	return queryEvents(b.db, `seq > ? ORDER BY seq`, after)

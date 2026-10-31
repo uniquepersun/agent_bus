@@ -142,6 +142,60 @@ func (c *Client) Wait(ctx context.Context, thread string, after int64, timeout t
 	return out.Events, err
 }
 
+// Render returns the rendered files (DECISIONS.md, contracts/*) by path.
+func (c *Client) Render(ctx context.Context) (map[string]string, error) {
+	var out struct{ Files map[string]string }
+	err := c.do(ctx, "GET", "/api/render", nil, &out)
+	return out.Files, err
+}
+
+func (c *Client) Agents(ctx context.Context) ([]bus.Agent, error) {
+	var out struct{ Agents []bus.Agent }
+	err := c.do(ctx, "GET", "/api/state", nil, &out)
+	return out.Agents, err
+}
+
+func (c *Client) Threads(ctx context.Context) ([]bus.Thread, error) {
+	var out []bus.Thread
+	err := c.do(ctx, "GET", "/api/threads", nil, &out)
+	return out, err
+}
+
+// FeedURL is the WebSocket feed URL starting after seq (-1 = only new events).
+func (c *Client) FeedURL(since int64) string {
+	u := c.BaseURL
+	if rest, ok := strings.CutPrefix(u, "http"); ok {
+		u = "ws" + rest
+	}
+	return u + "/ws?since=" + strconv.FormatInt(since, 10)
+}
+
+// FormatEvent renders an event as one line for terminals and prompts.
+func FormatEvent(e bus.Event) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "#%d %s", e.Seq, e.Type)
+	if e.Thread != "" {
+		fmt.Fprintf(&sb, " [%s]", e.Thread)
+	}
+	sb.WriteString(" " + e.From)
+	if e.To != "" {
+		sb.WriteString(" → " + e.To)
+	}
+	if e.Contract != "" && e.Rev != nil {
+		fmt.Fprintf(&sb, " (%s rev %d)", e.Contract, *e.Rev)
+	}
+	if e.Blocking {
+		sb.WriteString(" BLOCKING")
+	}
+	if body := strings.Join(strings.Fields(e.Body), " "); body != "" {
+		if len(body) > 160 {
+			body = body[:157] + "..."
+		}
+		sb.WriteString(": " + body)
+	}
+	return sb.String()
+}
+
 // SetMandate uploads mandate text for agent id.
 func (c *Client) SetMandate(ctx context.Context, id, mandate string) error {
 	req, err := http.NewRequestWithContext(ctx, "PUT", c.BaseURL+"/api/agents/"+url.PathEscape(id)+"/mandate", strings.NewReader(mandate))

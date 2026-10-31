@@ -106,9 +106,26 @@ const (
 	RoleWorker  Role = "worker"
 )
 
+// Liaisons only get messages they can act on; ACCEPT, ESCALATE and RESOLVE
+// leave them nothing to do, and the outcome reaches workers as DECIDED.
 var roleTypes = map[Role][]EventType{
-	RoleLiaison: {Propose, Counter, Accept, Ask, Answer, Escalate, Resolve},
+	RoleLiaison: {Propose, Counter, Ask, Answer},
 	RoleWorker:  {Decided, AssumptionBroken, Notify},
+}
+
+// Sees reports whether an agent in this role should be handed an event:
+// one from someone else, addressed to the agent or to everyone, of a type the
+// role handles.
+func (r Role) Sees(agent string, e Event) bool {
+	if e.From == agent || (e.To != "" && e.To != agent) {
+		return false
+	}
+	for _, t := range roleTypes[r] {
+		if e.Type == t {
+			return true
+		}
+	}
+	return false
 }
 
 // Error carries the HTTP status the API should answer with. Messages are

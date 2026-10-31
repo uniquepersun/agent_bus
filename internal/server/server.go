@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"agentbus/internal/bus"
+	"agentbus/internal/render"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -42,6 +43,7 @@ func New(b *bus.Bus) *Server {
 	s.mux.HandleFunc("GET /api/contracts", s.contracts)
 	s.mux.HandleFunc("GET /api/contracts/{name}", s.contract)
 	s.mux.HandleFunc("GET /api/decisions", s.decisions)
+	s.mux.HandleFunc("GET /api/render", s.render)
 	s.mux.HandleFunc("GET /api/inbox", s.inbox)
 	s.mux.HandleFunc("POST /api/ack", s.ack)
 	s.mux.HandleFunc("PUT /api/agents/{id}/mandate", s.setMandate)
@@ -165,6 +167,12 @@ func (s *Server) decisions(w http.ResponseWriter, r *http.Request) {
 	reply(w, evs, err)
 }
 
+// render returns {"files": {path: content}} for DECISIONS.md and contracts/.
+func (s *Server) render(w http.ResponseWriter, r *http.Request) {
+	files, err := render.Files(s.bus)
+	reply(w, map[string]any{"files": files}, err)
+}
+
 // inbox: GET /api/inbox?role=liaison|worker
 func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 	from, ok := identity(w, r)
@@ -201,10 +209,19 @@ func (s *Server) setMandate(w http.ResponseWriter, r *http.Request) {
 	reply(w, map[string]bool{"ok": true}, s.bus.SetMandate(r.PathValue("id"), string(text)))
 }
 
-// ws streams ledger events as JSON, starting after ?since=<seq>. Clients
-// reconnect with the last seq they saw to resume without gaps.
+// ws streams ledger events as JSON, starting after ?since=<seq> (or only
+// new events with since=-1). Clients reconnect with the last seq they saw to
+// resume without gaps.
 func (s *Server) ws(w http.ResponseWriter, r *http.Request) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	if since < 0 {
+		head, err := s.bus.Head()
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		since = head
+	}
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
 	if err != nil {
 		return
