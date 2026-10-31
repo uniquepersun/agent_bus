@@ -2,7 +2,7 @@
   "escalation_timeout": "3m",
   "agents": [
     {"id": "backend@abhay", "human": "abhay", "mandate_file": "mandates/backend.md"},
-    {"id": "frontend@teammate", "human": "teammate", "mandate_file": "mandates/frontend.md"}
+    {"id": "frontend@rajveer", "human": "rajveer", "mandate_file": "mandates/frontend.md"}
   ],
   "contracts": [
     {"name": "openapi.yaml", "owner": "backend@abhay", "seed_file": "seed/openapi.yaml"},

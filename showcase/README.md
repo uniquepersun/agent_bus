@@ -5,7 +5,7 @@ A small two-person project for demonstrating Agent Bus: a tasks API (backend) an
 | Side | Identity | Project | Mandate highlights |
 |---|---|---|---|
 | Backend | `backend@abhay` | `~/Desktop/test-backend` | owns the contracts; auto-accepts additive changes; asks about renames, type changes, auth |
-| Frontend | `frontend@teammate` | `~/Desktop/test-frontend` | the UI reads `User.name`, `User.email`, `Task.title`, `Task.done`; asks before any of those change |
+| Frontend | `frontend@rajveer` | `~/Desktop/test-frontend` | the UI reads `User.name`, `User.email`, `Task.title`, `Task.done`; asks before any of those change |
 
 ## Run it
 
