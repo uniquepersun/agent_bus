@@ -4,6 +4,18 @@ Agent Bus is a coordination layer for AI coding agents that work on the same pro
 
 Build, run, and test steps are in [INSTRUCTIONS.md](INSTRUCTIONS.md). The original design brief is in [SPEC.md](SPEC.md).
 
+## Quick start
+
+Download the archive for your platform from the [latest release](https://github.com/uniquepersun/agent_bus/releases/latest) (macOS and Linux, arm64 and amd64), unpack it, and use `demo.sh`. No Go toolchain is needed.
+
+```sh
+./demo.sh server                                                    # on the machine that hosts the bus and dashboard
+./demo.sh laptop -server http://<bus-ip>:7070 -as frontend@teammate -project ~/code/app   # on each laptop
+./demo.sh rehearse                                                  # both sides on one machine, for practice
+```
+
+Each laptop needs a signed-in coding agent CLI: the Antigravity CLI (`agy`, the default) or Claude Code (`-agent claude`). Agents can be mixed: one person can use `agy` while the other uses Claude Code.
+
 ## The problem
 
 Two developers who each pair with a coding agent quickly hit the same friction: one agent changes an API or a schema, and the other agent's code breaks. Letting the agents chat freely does not solve it. Unstructured conversation drifts, loops, and consumes tokens without converging, and nothing guarantees the humans stay in charge of decisions that matter to them.

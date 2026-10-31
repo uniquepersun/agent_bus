@@ -8,6 +8,18 @@ How to build, run, and test Agent Bus. For what the project is and how it works,
 - A coding agent CLI for workers and liaisons: Claude Code (`claude`) or the Antigravity CLI (`agy`), signed in
 - Optional: Codex CLI, used as a liaison via `-liaison "codex exec"`
 
+## One-command setup
+
+`demo.sh` wraps everything below. It builds the binaries when run from source and uses the prebuilt ones in a release archive.
+
+| Command | What it does |
+|---|---|
+| `./demo.sh server [-port 7070] [-fresh]` | Starts the bus and dashboard and prints the address to give each laptop |
+| `./demo.sh laptop -as ID -project DIR [-server URL] [-agent agy\|claude] [-mandate FILE] [-allow-command CMD]` | Installs the worker integration into the project, starts the daemon in the background, then opens `bus chat` (agy) or Claude Code |
+| `./demo.sh rehearse` | Runs the bus and both sides on one machine in two Terminal windows, with a sample frontend project in `~/agentbus-demo` |
+
+The first time it installs for agy, the script adds the permission rules headless agy needs to `~/.gemini/antigravity-cli/settings.json` (see section 6).
+
 ## Build
 
 ```sh
