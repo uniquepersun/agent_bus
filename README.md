@@ -14,7 +14,7 @@ Download the archive for your platform from the [latest release](https://github.
 ./demo.sh rehearse                                                  # both sides on one machine, for practice
 ```
 
-For a step-by-step setup on two laptops, see [TWO-LAPTOPS.md](TWO-LAPTOPS.md).
+For a step-by-step setup on two laptops, see [TWO-LAPTOPS.md](TWO-LAPTOPS.md). For a ready-made two-person project to demonstrate it on (a tasks API and its UI, with contracts and mandates), see [showcase/](showcase/README.md): `./demo.sh showcase server`, then `./demo.sh showcase backend` and `./demo.sh showcase frontend` on the two laptops.
 
 Each laptop needs a signed-in coding agent CLI: the Antigravity CLI (`agy`, the default) or Claude Code (`-agent claude`). Agents can be mixed: one person can use `agy` while the other uses Claude Code.
 

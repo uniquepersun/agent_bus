@@ -5,6 +5,11 @@
 #   ./demo.sh laptop -as ID -project DIR     set up and start one person's side, then open their agent
 #   ./demo.sh rehearse                       run both sides on this machine (agy), in two Terminal windows
 #
+#   ./demo.sh showcase server                the showcase tasks app: bus with its contracts and mandates
+#   ./demo.sh showcase backend|frontend -server URL [-agent claude] [-project DIR]
+#                                            create the showcase project (default ~/Desktop/test-<side>)
+#                                            if needed, then start that side
+#
 # laptop options:
 #   -as ID              agent identity from bus.json, e.g. backend@abhay or frontend@teammate
 #   -project DIR        the code repository this person's agent works in
@@ -16,6 +21,8 @@
 # server options:
 #   -port N             port to listen on (default 7070)
 #   -fresh              start from an empty ledger
+#   -config FILE        agents and contracts (default bus.json)
+#   -db FILE            ledger file (default bus.db)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,22 +44,24 @@ lan_ip() {
 }
 
 cmd_server() {
-  local port=7070 fresh=0
+  local port=7070 fresh=0 config=bus.json db=bus.db
   while [ $# -gt 0 ]; do
     case "$1" in
       -port) port="$2"; shift 2 ;;
       -fresh) fresh=1; shift ;;
+      -config) config="$2"; shift 2 ;;
+      -db) db="$2"; shift 2 ;;
       *) die "unknown server option $1" ;;
     esac
   done
   build
-  [ "$fresh" = 1 ] && rm -f "$ROOT"/bus.db "$ROOT"/bus.db-*
+  [ "$fresh" = 1 ] && rm -f "$ROOT/$db" "$ROOT/$db"-*
   local ip; ip="$(lan_ip)"
   say "Agent Bus server"
   echo "Dashboard:      http://$ip:$port   (open this on the projector)"
   echo "Bus address:    http://$ip:$port   (give this to each laptop as -server)"
   echo "Stop with Ctrl+C."
-  cd "$ROOT" && exec "$BIN/busd" -addr "0.0.0.0:$port" -config bus.json -db bus.db
+  cd "$ROOT" && exec "$BIN/busd" -addr "0.0.0.0:$port" -config "$config" -db "$db"
 }
 
 cmd_laptop() {
@@ -162,9 +171,34 @@ Stop the bus afterwards with: pkill -f "busd -addr 127.0.0.1:7070"
 EOF
 }
 
+cmd_showcase() {
+  local side="${1:-}"; shift || true
+  case "$side" in
+    server)
+      cmd_server -config showcase/bus.json -db showcase.db "$@" ;;
+    backend|frontend)
+      local id project="$HOME/Desktop/test-$side" args=()
+      id="$(grep -o "\"$side@[^\"]*\"" "$ROOT/showcase/bus.json" | head -1 | tr -d '"')"
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          -project) project="$2"; shift 2 ;;
+          *) args+=("$1"); shift ;;
+        esac
+      done
+      mkdir -p "$project"
+      if [ ! -d "$project/src" ]; then
+        say "Creating the showcase $side project in $project"
+        cp -Rn "$ROOT/showcase/template/$side/." "$project/"
+      fi
+      cmd_laptop -as "$id" -project "$project" -mandate "$ROOT/showcase/mandates/$side.md" ${args[@]+"${args[@]}"} ;;
+    *) die "usage: ./demo.sh showcase server | backend -server URL | frontend -server URL" ;;
+  esac
+}
+
 case "${1:-}" in
   server) shift; cmd_server "$@" ;;
+  showcase) shift; cmd_showcase "$@" ;;
   laptop) shift; cmd_laptop "$@" ;;
   rehearse) shift; cmd_rehearse "$@" ;;
-  *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

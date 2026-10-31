@@ -1,0 +1,80 @@
+openapi: 3.0.3
+info:
+  title: Tasks API
+  version: 0.1.0
+paths:
+  /users/{id}:
+    get:
+      summary: Get a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /tasks:
+    get:
+      summary: List tasks
+      responses:
+        "200":
+          description: All tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+    post:
+      summary: Create a task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewTask"
+      responses:
+        "201":
+          description: The created task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+components:
+  schemas:
+    User:
+      type: object
+      required: [id, name, email]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+    Task:
+      type: object
+      required: [id, title, done, assignee_id]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        done:
+          type: boolean
+        assignee_id:
+          type: string
+    NewTask:
+      type: object
+      required: [title, assignee_id]
+      properties:
+        title:
+          type: string
+        assignee_id:
+          type: string

@@ -14,7 +14,7 @@ for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
   stage="dist/$name"
   mkdir -p "$stage/bin"
   CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "$stage/bin/" ./cmd/...
-  cp -R demo.sh bus.json mandates seed README.md INSTRUCTIONS.md TWO-LAPTOPS.md SPEC.md "$stage/"
+  cp -R demo.sh bus.json mandates seed showcase README.md INSTRUCTIONS.md TWO-LAPTOPS.md SPEC.md "$stage/"
   tar -C dist -czf "dist/$name.tar.gz" "$name"
   rm -rf "$stage"
   echo "built dist/$name.tar.gz"

@@ -1,5 +1,7 @@
 # Running Agent Bus on two laptops
 
+For a ready-made project with its own contracts and mandates, use the showcase instead of the steps below: see [showcase/README.md](showcase/README.md).
+
 This guide sets up the demo on two laptops: **Laptop A** runs the bus server and the backend agent, **Laptop B** runs the frontend agent. Allow about 10 minutes the first time.
 
 ## 1. Before you start (both laptops)

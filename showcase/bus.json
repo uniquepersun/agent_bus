@@ -1,0 +1,12 @@
+{
+  "escalation_timeout": "3m",
+  "agents": [
+    {"id": "backend@abhay", "human": "abhay", "mandate_file": "mandates/backend.md"},
+    {"id": "frontend@teammate", "human": "teammate", "mandate_file": "mandates/frontend.md"}
+  ],
+  "contracts": [
+    {"name": "openapi.yaml", "owner": "backend@abhay", "seed_file": "seed/openapi.yaml"},
+    {"name": "schema.sql", "owner": "backend@abhay", "seed_file": "seed/schema.sql"},
+    {"name": "env.md", "owner": "backend@abhay", "seed_file": "seed/env.md"}
+  ]
+}

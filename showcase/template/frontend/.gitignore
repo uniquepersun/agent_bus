@@ -1,0 +1,3 @@
+node_modules/
+.agentbus/
+.agents/plugins/agent-bus/
