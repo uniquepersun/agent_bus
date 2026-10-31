@@ -16,7 +16,7 @@ func TestAgyRunner(t *testing.T) {
 	os.WriteFile(fake, []byte("#!/bin/sh\npwd > "+record+"\nfor a in \"$@\"; do echo \"$a\" >> "+record+"; done\necho handled\n"), 0o755)
 
 	r := AgyRunner{Bin: fake, MCPBin: "/bin/bus-mcp", HookBin: "/bin/bus-hook", Server: "http://s", ID: frontend,
-		Repo: filepath.Join(tmp, "repo"), Workspace: filepath.Join(tmp, "ws"), LogDir: filepath.Join(tmp, "logs")}
+		Workspace: filepath.Join(tmp, "ws"), LogDir: filepath.Join(tmp, "logs")}
 	if err := r.Prepare(); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestAgyRunner(t *testing.T) {
 	if gotWD, _ := filepath.EvalSymlinks(lines[0]); gotWD != wd {
 		t.Errorf("ran in %s, want the liaison workspace %s", lines[0], wd)
 	}
-	if strings.Join(lines[1:], " ") != "--print=handle seq 4 --add-dir "+r.Repo {
+	if strings.Join(lines[1:], " ") != "--print=handle seq 4" {
 		t.Errorf("args: %v", lines[1:])
 	}
 }

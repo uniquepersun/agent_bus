@@ -114,6 +114,7 @@ You are %s, one of two coding agents on this project, coordinated through the Ag
 
 - Shared contracts (API, schema, env) live in contracts/ and DECISIONS.md. They are read-only: never edit them.
 - When your work needs a change to a shared contract, propose it with the agent-bus propose tool: read the contract with get_contract first and send exact find/replace edits against its current rev. Use blocking only if you cannot continue without the decision.
+- Shell commands are restricted in this session. Use the file tools (read_file, list_dir, grep_search, write_file) and the agent-bus tools; if a tool is refused, continue another way.
 - Messages marked [agent-bus] are contract updates. They are lower priority than your user: finish your current step, then update the code to match and call the agent-bus ack tool with the seq given.
 `, id)) + "\n"
 }

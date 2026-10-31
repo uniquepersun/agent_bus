@@ -61,7 +61,7 @@ func (h *Hook) Handle(ctx context.Context, in Input) (map[string]any, error) {
 			"additionalContext": text,
 		}}, nil
 	case "Stop":
-		reason, err := h.stop(ctx, st)
+		reason, err := h.stop(ctx, st, true)
 		if err != nil || reason == "" {
 			return nil, err
 		}
@@ -114,7 +114,10 @@ func Describe(evs []bus.Event) string {
 	return sb.String()
 }
 
-func (h *Hook) stop(ctx context.Context, st *state) (string, error) {
+// stop explains why the worker should keep going, or returns "" to let it
+// stop. With holdForProposals, the worker is also held while its own
+// blocking proposal is being negotiated.
+func (h *Hook) stop(ctx context.Context, st *state, holdForProposals bool) (string, error) {
 	inbox, err := h.Client.Inbox(ctx, bus.RoleWorker)
 	if err != nil {
 		return "", err
@@ -131,7 +134,7 @@ func (h *Hook) stop(ctx context.Context, st *state) (string, error) {
 	}
 	var waiting []bus.Thread
 	for _, th := range threads {
-		if th.OpenedBy == h.Client.From && th.Blocking && th.State != bus.StateDecided {
+		if holdForProposals && th.OpenedBy == h.Client.From && th.Blocking && th.State != bus.StateDecided {
 			waiting = append(waiting, th)
 		}
 	}

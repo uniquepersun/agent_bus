@@ -55,25 +55,40 @@ func TestAgyWorkerHooks(t *testing.T) {
 	if out := run("Stop", "NO_TOOL_CALL"); out["decision"] != "continue" || !strings.Contains(out["reason"].(string), "not applied") {
 		t.Fatalf("Stop: %v", out)
 	}
+
+	// Unlike Claude Code, an agy worker is not held for its own open proposal.
+	inbox, _ := fe.Inbox(ctx, bus.RoleWorker)
+	fe.Ack(ctx, bus.RoleWorker, inbox[len(inbox)-1].Seq)
+	if _, err := fe.Act(ctx, "avatar", "propose", bus.ProposeReq{Title: "a", Contract: "openapi.yaml", BaseRev: 1,
+		Edits: []bus.Edit{{Old: "", New: "# a\n"}}, Reason: "r", Blocking: true}); err != nil {
+		t.Fatal(err)
+	}
+	if out := run("Stop", "NO_TOOL_CALL"); len(out) != 0 {
+		t.Fatalf("agy Stop held for an open proposal: %v", out)
+	}
 }
 
 func TestLiaisonGate(t *testing.T) {
-	call := func(name, server string) AgyInput {
-		raw, _ := json.Marshal(map[string]any{"name": name, "args": map[string]any{"ServerName": server}})
-		return AgyInput{ToolCall: raw}
+	call := func(name string, args map[string]any) AgyInput {
+		raw, _ := json.Marshal(map[string]any{"name": name, "args": args})
+		return AgyInput{ToolCall: raw, WorkspacePaths: []string{"/cache/liaison"}}
 	}
 	for _, tc := range []struct {
 		in   AgyInput
 		want string
 	}{
-		{call("call_mcp_tool", "agent-bus_agent-bus"), "allow"},
-		{call("read_file", ""), "allow"},
-		{call("call_mcp_tool", "github"), "deny"},
-		{call("write_file", ""), "deny"},
-		{call("run_command", ""), "deny"},
+		{call("call_mcp_tool", map[string]any{"ServerName": "agent-bus_agent-bus"}), "allow"},
+		{call("read_file", map[string]any{"Path": "/home/.gemini/antigravity-cli/mcp/agent-bus_agent-bus/inbox.json"}), "allow"},
+		{call("list_dir", map[string]any{"DirectoryPath": "/cache/liaison/.agents"}), "allow"},
+		{call("read_file", map[string]any{"Path": "/home/code/app/src/UserCard.tsx"}), "deny"},
+		{call("read_file", map[string]any{"Path": "/home/.gemini/antigravity-cli/mcp_config.json"}), "deny"},
+		{call("read_file", map[string]any{"Path": "/cache/liaison-other/x"}), "deny"},
+		{call("call_mcp_tool", map[string]any{"ServerName": "github"}), "deny"},
+		{call("write_file", map[string]any{"Path": "/cache/liaison/x"}), "deny"},
+		{call("run_command", nil), "deny"},
 		{AgyInput{}, "deny"},
 	} {
-		if got := LiaisonGate(tc.in)["decision"]; got != tc.want {
+		if got := LiaisonGate(tc.in, "/home/.gemini/antigravity-cli/mcp")["decision"]; got != tc.want {
 			t.Errorf("%s: got %v, want %s", tc.in.ToolCall, got, tc.want)
 		}
 	}
@@ -113,5 +128,34 @@ func TestAgyPluginAndPermissions(t *testing.T) {
 	json.Unmarshal(raw, &got)
 	if got.Model != "x" || len(got.Permissions.Allow) != 3 || got.Permissions.Allow[1] != "mcp(agent-bus_agent-bus/*)" {
 		t.Fatalf("settings: %s", raw)
+	}
+}
+
+func TestWorkerGate(t *testing.T) {
+	cmd := func(line string) AgyInput {
+		raw, _ := json.Marshal(map[string]any{"name": "run_command", "args": map[string]any{"CommandLine": line}})
+		return AgyInput{ToolCall: raw}
+	}
+	read, _ := json.Marshal(map[string]any{"name": "write_file", "args": map[string]any{}})
+	allowed := []string{"npm test", "grep"}
+	for _, tc := range []struct {
+		in   AgyInput
+		want string
+	}{
+		{AgyInput{ToolCall: read}, "allow"},
+		{cmd("npm test"), "allow"},
+		{cmd("grep -rn name src/"), "allow"},
+		{cmd("npm testing"), "deny"},
+		{cmd("git status; ls -la"), "deny"},
+		{cmd("grep x | rm -rf /"), "deny"},
+		{cmd("ls -la"), "deny"},
+	} {
+		out := WorkerGate(tc.in, allowed)
+		if out["decision"] != tc.want {
+			t.Errorf("%s: got %v, want %s", tc.in.ToolCall, out["decision"], tc.want)
+		}
+		if tc.want == "deny" && !strings.Contains(out["reason"].(string), "npm test, grep") {
+			t.Errorf("deny reason should list allowed commands: %v", out["reason"])
+		}
 	}
 }

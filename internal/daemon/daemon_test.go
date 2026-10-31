@@ -153,7 +153,8 @@ func TestDaemonsRunDemoTrace(t *testing.T) {
 	}
 }
 
-// A liaison that never acks is not restarted until something new arrives.
+// A liaison that never acks is retried once, then not restarted until
+// something new arrives.
 func TestUnackedLiaisonDoesNotLoop(t *testing.T) {
 	b, _ := bus.Open(filepath.Join(t.TempDir(), "bus.db"))
 	defer b.Close()
@@ -176,14 +177,16 @@ func TestUnackedLiaisonDoesNotLoop(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond) // let the daemon connect
 	ask("first-question")
-	select {
-	case <-runs:
-	case <-time.After(5 * time.Second):
-		t.Fatal("liaison never started")
+	for i := 0; i < LiaisonAttempts; i++ { // the first run plus its retry
+		select {
+		case <-runs:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("liaison attempt %d never started", i+1)
+		}
 	}
 	select {
 	case p := <-runs:
-		t.Fatalf("liaison restarted with nothing new:\n%s", p)
+		t.Fatalf("liaison restarted beyond its retry with nothing new:\n%s", p)
 	case <-time.After(300 * time.Millisecond):
 	}
 	ask("second-question")

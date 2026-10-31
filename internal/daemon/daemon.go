@@ -122,11 +122,16 @@ func (d *Daemon) kick() {
 	}
 }
 
-// liaisonLoop runs one liaison at a time for whatever is in the inbox. If a
-// liaison leaves messages unacked, it isn't restarted for them until
-// something new arrives, so a confused liaison can't loop.
+// LiaisonAttempts is how many times a liaison is started for the same
+// unacked messages. Headless agents occasionally end a run without acting,
+// so one retry is allowed; after that the daemon waits for new activity, so a
+// confused liaison can't loop.
+const LiaisonAttempts = 2
+
+// liaisonLoop runs one liaison at a time for whatever is in the inbox.
 func (d *Daemon) liaisonLoop(ctx context.Context) {
 	var lastHandled int64
+	attempts := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -142,13 +147,19 @@ func (d *Daemon) liaisonLoop(ctx context.Context) {
 			continue
 		}
 		last := inbox[len(inbox)-1].Seq
-		if last == lastHandled {
-			d.Log.Printf("liaison left %d message(s) unacked; waiting for new activity", len(inbox))
+		if last != lastHandled {
+			lastHandled, attempts = last, 0
+		}
+		if attempts >= LiaisonAttempts {
+			d.Log.Printf("liaison left %d message(s) unacked after %d attempts; waiting for new activity", len(inbox), attempts)
 			continue
 		}
-		lastHandled = last
-
-		d.Log.Printf("%d message(s) for the liaison; starting it", len(inbox))
+		attempts++
+		if attempts > 1 {
+			d.Log.Printf("liaison left %d message(s) unacked; retrying", len(inbox))
+		} else {
+			d.Log.Printf("%d message(s) for the liaison; starting it", len(inbox))
+		}
 		start := time.Now()
 		runCtx, cancel := context.WithTimeout(ctx, d.LiaisonTimeout)
 		err = d.Liaison.Run(runCtx, d.prompt(inbox))

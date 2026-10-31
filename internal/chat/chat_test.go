@@ -78,6 +78,7 @@ func TestChat(t *testing.T) {
 	defer b.Close()
 	b.UpsertAgent(backend, "abhay", "")
 	b.UpsertAgent(frontend, "teammate", "")
+	b.SeedContract("openapi.yaml", backend, "openapi: 3.0.3\n")
 	ts := httptest.NewServer(server.New(b))
 	defer ts.Close()
 
@@ -129,6 +130,17 @@ func TestChat(t *testing.T) {
 	if last.Type != bus.Answer || last.From != "human:teammate" || last.ReplyTo != ask {
 		t.Fatalf("answer not recorded: %+v", last)
 	}
+
+	// A decision arriving while the agent is idle starts a turn for it.
+	if _, err := client.New(ts.URL, frontend).Act(ctx, "avatar", "propose", bus.ProposeReq{Title: "Avatar",
+		Contract: "openapi.yaml", Edits: []bus.Edit{{Old: "", New: "# avatar\n"}}, Reason: "r"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.New(ts.URL, backend).Act(ctx, "avatar", "accept", bus.AcceptReq{}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor("asking it to apply the update")
+	waitFor("agent> echo: [agent-bus] Contract update")
 
 	say("/threads")
 	waitFor("users-shape")

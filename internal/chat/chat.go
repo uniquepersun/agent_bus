@@ -43,6 +43,7 @@ type Chat struct {
 	busy      bool // a turn is running
 	streaming bool // agent text is mid-line
 	seqThread map[int64]string
+	nudged    int64 // last decision the idle agent was woken up for
 }
 
 // Run chats until the input ends, the user types /quit, or ctx ends.
@@ -416,6 +417,7 @@ func (c *Chat) followBus(ctx context.Context) {
 				since = e.Seq
 				c.remember(e)
 				c.busEvent(e)
+				c.wake(e)
 			}
 			conn.CloseNow()
 		}
@@ -423,6 +425,28 @@ func (c *Chat) followBus(ctx context.Context) {
 		case <-ctx.Done():
 		case <-time.After(2 * time.Second):
 		}
+	}
+}
+
+// wake starts a turn when a decision the worker must act on arrives while
+// it is idle. Mid-turn, the worker hook delivers it instead; either way the
+// hook injects the details on the agent's next model call.
+func (c *Chat) wake(e bus.Event) {
+	if (e.Type != bus.Decided && e.Type != bus.AssumptionBroken) || !bus.RoleWorker.Sees(c.Client.From, e) {
+		return
+	}
+	c.mu.Lock()
+	if c.busy || e.Seq <= c.nudged {
+		c.mu.Unlock()
+		return
+	}
+	c.busy, c.nudged = true, e.Seq
+	c.mu.Unlock()
+	c.println(c.paint(green, "  [bus] your agent is idle; asking it to apply the update"))
+	msg, _ := json.Marshal(map[string]any{"event": "user", "message": map[string]any{
+		"content": fmt.Sprintf("[agent-bus] Contract update #%d arrived. Apply it to the code as described in the agent-bus update, then ack it.", e.Seq)}})
+	if _, err := c.agent.Write(append(msg, '\n')); err != nil {
+		c.println(c.paint(red, "could not send to the agent: "+err.Error()))
 	}
 }
 

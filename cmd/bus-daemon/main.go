@@ -78,7 +78,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		r := daemon.AgyRunner{Bin: "agy", MCPBin: *mcpBin, HookBin: sibling("bus-hook"), Server: *server, ID: *as, Repo: dir,
+		r := daemon.AgyRunner{Bin: "agy", MCPBin: *mcpBin, HookBin: sibling("bus-hook"), Server: *server, ID: *as,
 			Workspace: filepath.Join(cache, "agent-bus", "liaison", strings.ReplaceAll(*as, "/", "_")), LogDir: logDir, Out: os.Stderr}
 		if err := r.Prepare(); err != nil {
 			log.Fatal(err)

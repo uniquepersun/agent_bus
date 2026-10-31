@@ -32,10 +32,13 @@ func main() {
 	format := flag.String("format", "claude", "hook protocol: claude or agy")
 	event := flag.String("event", "", "agy only: the hook event (PreInvocation, Stop, PreToolUse)")
 	gate := flag.Bool("liaison-gate", false, "agy PreToolUse: allow only read-only and agent-bus tools")
+	workerGate := flag.Bool("worker-gate", false, "agy PreToolUse: refuse shell commands outside -allow-command")
+	var commands multiFlag
+	flag.Var(&commands, "allow-command", "with -worker-gate: an allowed command prefix (repeatable)")
 	flag.Parse()
 
 	if *format == "agy" {
-		runAgy(*server, *as, *event, *gate)
+		runAgy(*server, *as, *event, *gate, *workerGate, commands)
 		return
 	}
 	var in hook.Input
@@ -56,13 +59,19 @@ func main() {
 
 // runAgy always prints a JSON object: agy expects one, and treats a missing
 // PreToolUse decision as a denial.
-func runAgy(server, as, event string, gate bool) {
+func runAgy(server, as, event string, gate, workerGate bool, commands []string) {
 	var in hook.AgyInput
 	json.NewDecoder(os.Stdin).Decode(&in)
 	out := map[string]any{}
 	defer func() { json.NewEncoder(os.Stdout).Encode(out) }()
-	if gate {
-		out = hook.LiaisonGate(in)
+	switch {
+	case gate:
+		// agy's own MCP tool schemas are the only files headless agy lets
+		// it read without a rule.
+		out = hook.LiaisonGate(in, filepath.Join(filepath.Dir(hook.AgySettingsPath()), "mcp"))
+		return
+	case workerGate:
+		out = hook.WorkerGate(in, commands)
 		return
 	}
 	if as == "" {
@@ -123,12 +132,18 @@ func install(args []string) {
 		cmd := func(event string) string {
 			return strings.Join(append(base, "-format", "agy", "-event", event), " ")
 		}
+		gateArgs := []string{hook.ShellQuote(self), "-format", "agy", "-worker-gate"}
+		for _, c := range commands {
+			gateArgs = append(gateArgs, "-allow-command", hook.ShellQuote(c))
+		}
+		gateCmd := strings.Join(gateArgs, " ")
 		pluginDir, err := hook.WriteAgyPlugin(dir, hook.AgyPlugin{
 			MCPCommand: mcpBin,
 			MCPArgs:    []string{"-server", *server, "-as", *as, "-role", "worker"},
 			Hooks: map[string]any{
 				"PreInvocation": []any{hook.AgyHook(cmd("PreInvocation"))},
 				"Stop":          []any{hook.AgyHook(cmd("Stop"))},
+				"PreToolUse":    []any{map[string]any{"matcher": "*", "hooks": []any{hook.AgyHook(gateCmd)}}},
 			},
 			Rules: hook.WorkerRules(*as),
 		})

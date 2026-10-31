@@ -45,15 +45,15 @@ func (r ClaudeRunner) Run(ctx context.Context, prompt string) error {
 
 // AgyRunner starts the Antigravity CLI headless (`agy --print`). It runs from
 // its own workspace outside the repo, so it loads only the liaison plugin
-// (liaison-role MCP server plus a PreToolUse gate that allows reading and
-// agent-bus tools only), and sees the repo through --add-dir.
+// (liaison-role MCP server plus a PreToolUse gate that allows the agent-bus
+// tools only). It reads contracts through the bus, not the repo: headless
+// agy would end the turn on a repo read it has no permission rule for.
 type AgyRunner struct {
 	Bin       string // agy executable
 	MCPBin    string // bus-mcp executable
 	HookBin   string // bus-hook executable, for the read-only gate
 	Server    string
 	ID        string
-	Repo      string // the project, added read-only
 	Workspace string // the liaison's own workspace directory
 	LogDir    string
 	Out       io.Writer
@@ -83,7 +83,7 @@ func (r AgyRunner) Prepare() error {
 
 func (r AgyRunner) Run(ctx context.Context, prompt string) error {
 	// --print=<prompt> keeps the prompt attached to its flag.
-	cmd := exec.CommandContext(ctx, r.Bin, "--print="+prompt, "--add-dir", r.Repo)
+	cmd := exec.CommandContext(ctx, r.Bin, "--print="+prompt)
 	return runLogged(cmd, r.Workspace, r.LogDir, r.Out, prompt)
 }
 

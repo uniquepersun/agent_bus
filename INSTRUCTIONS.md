@@ -145,19 +145,19 @@ Each laptop can use `agy` instead of Claude Code for both the worker and the lia
    ```sh
    /abs/path/bin/bus-hook install -agent agy -server http://<server-ip>:7070 -as frontend@teammate -project ~/code/app
    ```
-   This writes `.agents/plugins/agent-bus/` into the project (MCP tools, hooks, rules) and adds two permission rules to `~/.gemini/antigravity-cli/settings.json`, which headless agy requires: `mcp(agent-bus_agent-bus/*)` and `write_file(<project>)`. Headless agy ends a turn when it is denied a tool, so also grant the commands your worker needs, for example `-allow-command "npm test" -allow-command "grep"`. Add `.agents/plugins/agent-bus/` to the project's `.gitignore`.
+   This writes `.agents/plugins/agent-bus/` into the project (MCP tools, hooks, rules, and a gate that refuses shell commands outside the `-allow-command` list with directions, so the agent carries on instead of its turn ending) and adds two permission rules to `~/.gemini/antigravity-cli/settings.json`, which headless agy requires: `mcp(agent-bus_agent-bus/*)` and `write_file(<project>)`. Headless agy ends a turn when it is denied a tool, so also grant the commands your worker needs, for example `-allow-command "npm test" -allow-command "grep"`. Add `.agents/plugins/agent-bus/` to the project's `.gitignore`.
 
 2. **Run the daemon with agy liaisons:**
    ```sh
    ./bin/bus-daemon -liaison agy -as frontend@teammate -mandate mandates/frontend.md -repo ~/code/app
    ```
-   Each liaison runs from its own workspace under `~/Library/Caches/agent-bus/liaison/`, so it loads only the liaison plugin. A `PreToolUse` hook limits it to reading files and the agent-bus tools.
+   Each liaison runs from its own workspace under `~/Library/Caches/agent-bus/liaison/`, so it loads only the liaison plugin. A `PreToolUse` hook limits it to the agent-bus tools; it reads contracts and history through the bus, not the repository. If a liaison run ends without handling its messages, the daemon retries it once. Expect one to two minutes per agy liaison turn.
 
 3. **Open the chat** (the demo window):
    ```sh
    ./bin/bus chat -server http://<server-ip>:7070 -as frontend@teammate -dir ~/code/app
    ```
-   Type to talk to your agent. Agent Bus activity appears inline; `[bus] update delivered to the agent` marks the moment a decision reaches it. Commands: `/answer <seq> <text>`, `/pick <seq>`, `/threads`, `/show <thread>`, `/help`, `/quit`.
+   Type to talk to your agent. Agent Bus activity appears inline; `[bus] update delivered to the agent` marks the moment a decision reaches it. If the agent is idle when a decision lands, the chat starts a turn so it applies the change right away. Commands: `/answer <seq> <text>`, `/pick <seq>`, `/threads`, `/show <thread>`, `/help`, `/quit`.
 
 A demonstration with two laptops: the backend person asks their agent in `bus chat` to rename `users.name` to `display_name` and propose the API change. The frontend person's chat shows the proposal, then `QUESTION FOR YOU` from their liaison; they reply with `/answer`. The liaisons settle the counter-proposal, both chats show `DECIDED`, and the frontend agent updates its code to match. Keep the dashboard on the projector throughout.
 
